@@ -46,9 +46,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNewProject, onOpenCommandPal
       {/* Brand header */}
       <div className="h-14 px-4 border-b border-[#1e1e22] flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-sm">
-            <Shield className="w-4 h-4" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="LocalVault"
+            className="w-7 h-7 rounded-lg object-contain shadow-sm border border-indigo-500/30"
+          />
           <span className="font-semibold text-sm tracking-tight text-white">LocalVault</span>
         </div>
         <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">

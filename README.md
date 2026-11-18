@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="LocalVault Logo" width="120" height="120" style="border-radius: 24px;" />
+</p>
+
 # LocalVault
 
 <p align="center">

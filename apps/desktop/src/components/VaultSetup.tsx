@@ -109,9 +109,11 @@ export const VaultSetup: React.FC = () => {
     <div className="flex flex-col items-center justify-center min-h-screen px-6 py-12">
       <div className="w-full max-w-md bg-[#141416] border border-[#1e1e22] rounded-xl p-8 shadow-2xl">
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-12 h-12 bg-indigo-600/10 border border-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400 mb-3">
-            <Shield className="w-6 h-6" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="LocalVault"
+            className="w-16 h-16 rounded-2xl mb-4 shadow-xl border border-indigo-500/30 object-contain"
+          />
           <h1 className="text-2xl font-bold tracking-tight text-white">Create LocalVault</h1>
           <p className="text-sm text-zinc-400 mt-1">
             Zero-cloud, zero-database local encrypted secrets storage.
