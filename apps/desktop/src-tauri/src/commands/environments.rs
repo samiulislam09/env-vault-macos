@@ -31,13 +31,18 @@ pub async fn list_environments_cmd(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateEnvInput {
+    #[serde(alias = "project_id")]
     pub project_id: String,
     pub name: String,
     pub color: Option<String>,
     pub icon: Option<String>,
+    #[serde(alias = "is_default")]
     pub is_default: bool,
+    #[serde(alias = "is_production")]
     pub is_production: bool,
+    #[serde(alias = "template_id")]
     pub template_id: Option<String>,
 }
 

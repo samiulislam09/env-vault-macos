@@ -47,8 +47,11 @@ pub async fn preview_import_cmd(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExecuteImportInput {
+    #[serde(alias = "env_id")]
     pub env_id: String,
+    #[serde(alias = "file_content")]
     pub file_content: String,
     pub format: ImportFormat,
     pub strategy: ImportStrategy,

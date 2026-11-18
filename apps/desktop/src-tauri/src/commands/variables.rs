@@ -85,10 +85,13 @@ pub async fn reveal_variable_value_cmd(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateVarInput {
+    #[serde(alias = "env_id")]
     pub env_id: String,
     pub key: String,
     pub value: String,
+    #[serde(alias = "var_type")]
     pub var_type: VarType,
     pub description: Option<String>,
     pub tags: Vec<String>,
@@ -144,11 +147,15 @@ pub async fn create_variable_cmd(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateVarInput {
+    #[serde(alias = "env_id")]
     pub env_id: String,
+    #[serde(alias = "var_id")]
     pub var_id: String,
     pub key: String,
     pub value: Option<String>,
+    #[serde(alias = "var_type")]
     pub var_type: VarType,
     pub description: Option<String>,
     pub tags: Vec<String>,

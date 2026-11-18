@@ -69,11 +69,14 @@ pub async fn list_projects_cmd(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateProjectInput {
+    #[serde(alias = "workspace_id")]
     pub workspace_id: Option<String>,
     pub name: String,
     pub description: Option<String>,
     pub icon: Option<String>,
+    #[serde(alias = "root_directory")]
     pub root_directory: Option<String>,
 }
 
