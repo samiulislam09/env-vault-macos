@@ -25,6 +25,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNewProject, onOpenCommandPal
   const projects = useVaultStore((s) => s.projects);
   const activeProjectId = useVaultStore((s) => s.activeProjectId);
   const selectProject = useVaultStore((s) => s.selectProject);
+  const deleteProject = useVaultStore((s) => s.deleteProject);
   const refreshProjects = useVaultStore((s) => s.refreshProjects);
   const lockVault = useVaultStore((s) => s.lockVault);
 
@@ -32,11 +33,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNewProject, onOpenCommandPal
     e.stopPropagation();
     if (confirm(`Are you sure you want to delete project "${projName}" and all its encrypted environments?`)) {
       try {
-        await api.deleteProject(projId);
-        await refreshProjects();
-        setActiveView("dashboard");
-      } catch (err) {
-        console.error("Failed to delete project:", err);
+        await deleteProject(projId);
+      } catch (err: any) {
+        alert("Failed to delete project: " + err.toString());
       }
     }
   };

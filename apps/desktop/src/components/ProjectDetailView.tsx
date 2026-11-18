@@ -38,6 +38,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 }) => {
   const projects = useVaultStore((s) => s.projects);
   const activeProjectId = useVaultStore((s) => s.activeProjectId);
+  const deleteProject = useVaultStore((s) => s.deleteProject);
   const environments = useVaultStore((s) => s.environments);
   const activeEnvironmentId = useVaultStore((s) => s.activeEnvironmentId);
   const selectEnvironment = useVaultStore((s) => s.selectEnvironment);
@@ -84,6 +85,21 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         await refreshEnvironments(activeProjectId);
       } catch (e: any) {
         alert("Failed to delete environment: " + e.toString());
+      }
+    }
+  };
+
+  const handleDeleteCurrentProject = async () => {
+    if (!activeProject || !activeProjectId) return;
+    if (
+      confirm(
+        `Are you sure you want to permanently delete project "${activeProject.name}" and all its encrypted environments? This action cannot be undone.`
+      )
+    ) {
+      try {
+        await deleteProject(activeProjectId);
+      } catch (err: any) {
+        alert("Failed to delete project: " + err.toString());
       }
     }
   };
@@ -163,12 +179,30 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
   const handleBulkImport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeEnvironmentId || !bulkContent.trim()) return;
+    if (!activeEnvironmentId) {
+      setFormError("No environment selected. Please select an environment first.");
+      return;
+    }
+    if (!bulkContent.trim()) {
+      setFormError("Please enter or paste at least one environment variable (e.g. KEY=VALUE).");
+      return;
+    }
     setFormError(null);
 
     try {
       setBulkLoading(true);
-      await api.executeImport(activeEnvironmentId, bulkContent, "dotenv", bulkStrategy);
+      const count = await api.executeImport(
+        activeEnvironmentId,
+        bulkContent,
+        "dotenv",
+        bulkStrategy || "overwrite"
+      );
+      if (count === 0) {
+        setFormError(
+          "No valid variables were found. Ensure each line follows KEY=VALUE format (e.g. PORT=3000)."
+        );
+        return;
+      }
       setIsAddingVar(false);
       setBulkContent("");
       await refreshVariables(activeEnvironmentId);
@@ -272,6 +306,16 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Single</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDeleteCurrentProject}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 rounded-lg text-xs font-medium transition"
+            title="Permanently delete this project"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+            <span>Delete Project</span>
           </button>
         </div>
       </div>

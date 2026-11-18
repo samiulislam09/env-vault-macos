@@ -37,6 +37,7 @@ interface VaultState {
 
   // Selection
   selectProject: (projectId: string) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
   selectEnvironment: (envId: string) => Promise<void>;
   refreshProjects: () => Promise<void>;
   refreshEnvironments: (projectId: string) => Promise<void>;
@@ -145,6 +146,26 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   selectProject: async (projectId: string) => {
     set({ activeProjectId: projectId, activeView: "project" });
     await get().refreshEnvironments(projectId);
+  },
+
+  deleteProject: async (projectId: string) => {
+    try {
+      await api.deleteProject(projectId);
+      const state = get();
+      if (state.activeProjectId === projectId) {
+        set({
+          activeProjectId: null,
+          activeEnvironmentId: null,
+          environments: [],
+          variables: [],
+          activeView: "dashboard",
+        });
+      }
+      await get().refreshProjects();
+    } catch (e: any) {
+      set({ error: e.toString() });
+      throw e;
+    }
   },
 
   refreshEnvironments: async (projectId: string) => {

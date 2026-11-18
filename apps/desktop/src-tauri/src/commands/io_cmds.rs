@@ -148,3 +148,22 @@ pub async fn export_environment_cmd(
         Ok(())
     }).map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_execute_import_input() {
+        let json = r#"{
+            "envId": "01934988-82ef-7d43-98fe-622879579344",
+            "fileContent": "FOO=BAR\nBAZ=QUX",
+            "format": "dotenv",
+            "strategy": "overwrite"
+        }"#;
+        let res: Result<ExecuteImportInput, _> = serde_json::from_str(json);
+        assert!(res.is_ok(), "Failed to deserialize: {:?}", res.err());
+    }
+}
+
+

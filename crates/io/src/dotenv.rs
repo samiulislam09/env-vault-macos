@@ -39,7 +39,14 @@ pub fn parse_dotenv(content: &str) -> LvResult<Vec<ParsedEnvEntry>> {
 
         // Split on first '='
         if let Some(equals_pos) = line_to_parse.find('=') {
-            let key = line_to_parse[..equals_pos].trim().to_string();
+            let mut key = line_to_parse[..equals_pos].trim().to_string();
+            if (key.starts_with('"') && key.ends_with('"'))
+                || (key.starts_with('\'') && key.ends_with('\''))
+            {
+                if key.len() >= 2 {
+                    key = key[1..key.len() - 1].trim().to_string();
+                }
+            }
             let remainder = line_to_parse[equals_pos + 1..].trim_start();
 
             // Validate key
