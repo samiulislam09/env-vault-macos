@@ -18,12 +18,15 @@ import {
   Search,
   ShieldAlert,
   Share2,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { EditVariableModal } from "./EditVariableModal";
 import { SecurityAuditModal } from "./SecurityAuditModal";
 import { QuickExportModal } from "./QuickExportModal";
 import { DuplicateEnvironmentModal } from "./DuplicateEnvironmentModal";
 import { ConfirmModal } from "./ConfirmModal";
+import { EditEnvironmentModal } from "./EditEnvironmentModal";
 import type { VariableSummary, VarType } from "../lib/types";
 
 interface ProjectDetailViewProps {
@@ -60,6 +63,9 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [isQuickExportOpen, setIsQuickExportOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isDuplicateEnvOpen, setIsDuplicateEnvOpen] = useState(false);
+  const [isEditEnvOpen, setIsEditEnvOpen] = useState(false);
+  const [groupByType, setGroupByType] = useState(false);
+  const [collapsedTypes, setCollapsedTypes] = useState<Record<string, boolean>>({});
 
   // Variable form modal
   const [isAddingVar, setIsAddingVar] = useState(false);
@@ -244,6 +250,82 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     });
   };
 
+  const renderVariableRow = (v: VariableSummary) => {
+    const isRevealed = !!revealedValues[v.id];
+    const displayedVal = isRevealed ? revealedValues[v.id] : "••••••••••••";
+
+    return (
+      <tr
+        key={v.id}
+        className="hover:bg-zinc-800/20 transition group"
+      >
+        <td className="py-3 px-4 font-mono font-medium text-white">
+          {v.key}
+        </td>
+        <td className="py-3 px-4 font-mono text-zinc-300">
+          <span className={isRevealed ? "text-indigo-300" : "text-zinc-500"}>
+            {displayedVal}
+          </span>
+        </td>
+        <td className="py-3 px-4">
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-zinc-800 text-zinc-300 uppercase font-medium">
+            {v.var_type}
+          </span>
+        </td>
+        <td className="py-3 px-4 text-zinc-500 truncate max-w-xs">
+          {v.description || "—"}
+        </td>
+        <td className="py-3 px-4 text-right">
+          <div className="flex items-center justify-end gap-1">
+            <button
+              type="button"
+              onClick={() => handleToggleReveal(v.id)}
+              className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition cursor-pointer"
+              title={isRevealed ? "Hide Value" : "Reveal Value"}
+            >
+              {isRevealed ? (
+                <EyeOff className="w-3.5 h-3.5 text-indigo-400" />
+              ) : (
+                <Eye className="w-3.5 h-3.5" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleCopyValue(v.id)}
+              className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition cursor-pointer"
+              title="Copy Value"
+            >
+              {copiedKey === v.id ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setEditingVar(v)}
+              className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition cursor-pointer"
+              title="Edit Variable"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleDeleteVariable(v.id, v.key)}
+              className="p-1.5 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-400 rounded transition cursor-pointer"
+              title="Delete Variable"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
   if (!activeProject) {
     return (
       <div className="flex-1 flex items-center justify-center p-8 text-zinc-500">
@@ -387,10 +469,21 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
         {/* Environment Quick Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          {activeEnv && (
+            <button
+              type="button"
+              onClick={() => setIsEditEnvOpen(true)}
+              className="flex items-center gap-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800/60 px-2.5 py-1 rounded-md text-xs transition border border-transparent hover:border-zinc-700 cursor-pointer"
+              title="Rename or Edit Environment"
+            >
+              <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+              <span>Edit Env</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setIsDuplicateEnvOpen(true)}
-            className="flex items-center gap-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800/60 px-2.5 py-1 rounded-md text-xs transition border border-transparent hover:border-zinc-700"
+            className="flex items-center gap-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800/60 px-2.5 py-1 rounded-md text-xs transition border border-transparent hover:border-zinc-700 cursor-pointer"
             title="Duplicate / Clone this Environment"
           >
             <Copy className="w-3.5 h-3.5 text-indigo-400" />
@@ -452,6 +545,19 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
             <span className="text-[11px] text-zinc-500 ml-2 font-mono shrink-0">
               {filteredVariables.length} of {variables.length}
             </span>
+
+            <button
+              type="button"
+              onClick={() => setGroupByType(!groupByType)}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                groupByType
+                  ? "bg-indigo-600 text-white shadow-xs"
+                  : "text-zinc-400 hover:text-white bg-zinc-800/60 hover:bg-zinc-800"
+              }`}
+              title="Toggle collapsible items grouped by type"
+            >
+              <span>{groupByType ? "Grouped (Collapsible)" : "Group by Type"}</span>
+            </button>
           </div>
         </div>
 
@@ -467,81 +573,46 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e1e22]">
-              {filteredVariables.map((v) => {
-                const isRevealed = !!revealedValues[v.id];
-                const displayedVal = isRevealed ? revealedValues[v.id] : "••••••••••••";
+              {groupByType ? (
+                (["secret", "configuration", "public", "url"] as VarType[]).map((type) => {
+                  const items = filteredVariables.filter((v) => v.var_type === type);
+                  if (items.length === 0) return null;
+                  const isCollapsed = !!collapsedTypes[type];
 
-                return (
-                  <tr
-                    key={v.id}
-                    className="hover:bg-zinc-800/20 transition group"
-                  >
-                    <td className="py-3 px-4 font-mono font-medium text-white">
-                      {v.key}
-                    </td>
-                    <td className="py-3 px-4 font-mono text-zinc-300">
-                      <span className={isRevealed ? "text-indigo-300" : "text-zinc-500"}>
-                        {displayedVal}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] bg-zinc-800 text-zinc-300 uppercase font-medium">
-                        {v.var_type}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-zinc-500 truncate max-w-xs">
-                      {v.description || "—"}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleReveal(v.id)}
-                          className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition"
-                          title={isRevealed ? "Hide Value" : "Reveal Value"}
-                        >
-                          {isRevealed ? (
-                            <EyeOff className="w-3.5 h-3.5 text-indigo-400" />
-                          ) : (
-                            <Eye className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleCopyValue(v.id)}
-                          className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition"
-                          title="Copy Value"
-                        >
-                          {copiedKey === v.id ? (
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          ) : (
-                            <Copy className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setEditingVar(v)}
-                          className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition"
-                          title="Edit Variable"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteVariable(v.id, v.key)}
-                          className="p-1.5 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-400 rounded transition"
-                          title="Delete Variable"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                  return (
+                    <React.Fragment key={type}>
+                      <tr
+                        onClick={() =>
+                          setCollapsedTypes((prev) => ({
+                            ...prev,
+                            [type]: !prev[type],
+                          }))
+                        }
+                        className="bg-[#101013] hover:bg-[#16161a] cursor-pointer transition select-none"
+                      >
+                        <td colSpan={5} className="py-2.5 px-4 border-b border-[#1e1e22]">
+                          <div className="flex items-center gap-2">
+                            {isCollapsed ? (
+                              <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5 text-indigo-400" />
+                            )}
+                            <span className="font-semibold uppercase tracking-wider text-[11px] text-zinc-200">
+                              {type}
+                            </span>
+                            <span className="text-[10px] text-zinc-500 font-mono">
+                              ({items.length} {items.length === 1 ? "item" : "items"})
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                      {!isCollapsed && items.map((v) => renderVariableRow(v))}
+                    </React.Fragment>
+                  );
+                })
+              ) : (
+                filteredVariables.map((v) => renderVariableRow(v))
+              )}
 
               {filteredVariables.length === 0 && (
                 <tr>
@@ -797,6 +868,13 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
       <QuickExportModal
         isOpen={isQuickExportOpen}
         onClose={() => setIsQuickExportOpen(false)}
+      />
+
+      {/* Edit Environment Modal */}
+      <EditEnvironmentModal
+        isOpen={isEditEnvOpen}
+        onClose={() => setIsEditEnvOpen(false)}
+        environment={activeEnv || null}
       />
 
       {/* Duplicate Environment Modal */}

@@ -105,6 +105,42 @@ pub async fn create_environment_cmd(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UpdateEnvInput {
+    #[serde(alias = "env_id")]
+    pub env_id: String,
+    pub name: String,
+    #[serde(alias = "is_production")]
+    pub is_production: bool,
+}
+
+#[tauri::command]
+pub async fn update_environment_cmd(
+    input: UpdateEnvInput,
+    state: State<'_, VaultState>,
+) -> Result<EnvironmentRecord, String> {
+    let eid = EnvId::parse(&input.env_id).map_err(|e| e.to_string())?;
+
+    state.with_unlocked_mut(|vault| {
+        let entry = vault
+            .manifest
+            .environments
+            .iter()
+            .find(|e| e.id == eid)
+            .ok_or_else(|| localvault_core::LvError::EnvironmentNotFound(input.env_id.clone()))?
+            .clone();
+
+        let mut env = EnvironmentRecord::load(&entry.record_id, &vault.vek, &vault.paths)?;
+        env.name = input.name.trim().to_string();
+        env.is_production = input.is_production;
+        env.updated_at = localvault_core::now_timestamp();
+
+        env.save(&entry.record_id, &vault.vek, &vault.paths)?;
+        Ok(env)
+    }).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DuplicateEnvInput {
     #[serde(alias = "source_env_id")]
     pub source_env_id: String,

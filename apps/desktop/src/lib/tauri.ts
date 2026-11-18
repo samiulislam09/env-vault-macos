@@ -64,6 +64,11 @@ export const api = {
     invoke<EnvironmentRecord>("duplicate_environment_cmd", {
       input: { sourceEnvId, name, isProduction },
     }),
+  updateEnvironment: (input: {
+    envId: string;
+    name: string;
+    isProduction: boolean;
+  }) => invoke<EnvironmentRecord>("update_environment_cmd", { input }),
   deleteEnvironment: (envId: string) =>
     invoke<void>("delete_environment_cmd", {
       envId,

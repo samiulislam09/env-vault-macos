@@ -14,6 +14,8 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 }) => {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [envName, setEnvName] = useState("Development");
+  const [isProduction, setIsProduction] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,12 +36,12 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
         description: description.trim() || undefined,
       });
 
-      // Auto-create a default "Development" environment for the project
+      // Auto-create initial environment for the project with chosen name
       await api.createEnvironment({
         projectId: proj.id,
-        name: "Development",
+        name: envName.trim() || "Development",
         isDefault: true,
-        isProduction: false,
+        isProduction,
       });
 
       await refreshProjects();
@@ -94,6 +96,38 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
               className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
             />
           </div>
+
+          <div className="pt-2 border-t border-zinc-800/80">
+            <label className="block text-xs font-medium text-zinc-300 mb-1">
+              Starter Environment Name
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Development, Production, Staging, Local"
+              value={envName}
+              onChange={(e) => {
+                setEnvName(e.target.value);
+                if (e.target.value.toLowerCase().includes("prod")) {
+                  setIsProduction(true);
+                }
+              }}
+              className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500"
+            />
+            <p className="text-[11px] text-zinc-500 mt-1">
+              Customize the initial environment name (e.g. &apos;Development&apos;, &apos;Production&apos;, &apos;Local&apos;).
+            </p>
+          </div>
+
+          <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
+            <input
+              type="checkbox"
+              checked={isProduction}
+              onChange={(e) => setIsProduction(e.target.checked)}
+              className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500"
+            />
+            <span>Mark starter environment as Production</span>
+          </label>
 
           <div className="flex items-center justify-end gap-2 pt-2">
             <button

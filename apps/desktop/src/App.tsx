@@ -74,6 +74,7 @@ export const App: React.FC = () => {
       <Sidebar
         onNewProject={() => setIsProjectModalOpen(true)}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        onNewEnvironment={() => setIsEnvModalOpen(true)}
       />
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-[#0a0a0b]">

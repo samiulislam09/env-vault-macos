@@ -26,6 +26,7 @@ interface VaultState {
   activeProjectId: string | null;
   environments: EnvironmentRecord[];
   activeEnvironmentId: string | null;
+  projectEnvironments: Record<string, EnvironmentRecord[]>;
   variables: VariableSummary[];
 
   // Actions
@@ -37,6 +38,9 @@ interface VaultState {
 
   // Selection
   selectProject: (projectId: string) => Promise<void>;
+  selectProjectAndEnvironment: (projectId: string, envId: string) => Promise<void>;
+  loadProjectEnvironments: (projectId: string) => Promise<EnvironmentRecord[]>;
+  updateEnvironment: (envId: string, name: string, isProduction: boolean) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   selectEnvironment: (envId: string) => Promise<void>;
   refreshProjects: () => Promise<void>;
@@ -58,6 +62,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   activeProjectId: null,
   environments: [],
   activeEnvironmentId: null,
+  projectEnvironments: {},
   variables: [],
 
   setActiveView: (view) => set({ activeView: view }),
@@ -148,10 +153,53 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     await get().refreshEnvironments(projectId);
   },
 
+  selectProjectAndEnvironment: async (projectId: string, envId: string) => {
+    set({ activeProjectId: projectId, activeView: "project", activeEnvironmentId: envId });
+    try {
+      const environments = await api.listEnvironments(projectId);
+      set((s) => ({
+        environments,
+        projectEnvironments: { ...s.projectEnvironments, [projectId]: environments },
+      }));
+      await get().refreshVariables(envId);
+    } catch (e: any) {
+      set({ error: e.toString() });
+    }
+  },
+
+  loadProjectEnvironments: async (projectId: string) => {
+    try {
+      const envs = await api.listEnvironments(projectId);
+      set((s) => ({
+        projectEnvironments: { ...s.projectEnvironments, [projectId]: envs },
+      }));
+      return envs;
+    } catch (e: any) {
+      console.error("Failed to load project environments:", e);
+      return [];
+    }
+  },
+
+  updateEnvironment: async (envId: string, name: string, isProduction: boolean) => {
+    try {
+      await api.updateEnvironment({ envId, name, isProduction });
+      const currentProjId = get().activeProjectId;
+      if (currentProjId) {
+        await get().refreshEnvironments(currentProjId);
+      }
+    } catch (e: any) {
+      set({ error: e.toString() });
+      throw e;
+    }
+  },
+
   deleteProject: async (projectId: string) => {
     try {
       await api.deleteProject(projectId);
       const state = get();
+      const updatedMap = { ...state.projectEnvironments };
+      delete updatedMap[projectId];
+
       if (state.activeProjectId === projectId) {
         set({
           activeProjectId: null,
@@ -159,7 +207,10 @@ export const useVaultStore = create<VaultState>((set, get) => ({
           environments: [],
           variables: [],
           activeView: "dashboard",
+          projectEnvironments: updatedMap,
         });
+      } else {
+        set({ projectEnvironments: updatedMap });
       }
       await get().refreshProjects();
     } catch (e: any) {
@@ -171,11 +222,20 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   refreshEnvironments: async (projectId: string) => {
     try {
       const environments = await api.listEnvironments(projectId);
-      set({ environments });
+      set((s) => ({
+        environments,
+        projectEnvironments: { ...s.projectEnvironments, [projectId]: environments },
+      }));
       if (environments.length > 0) {
-        const defaultEnv =
-          environments.find((e) => e.is_default) || environments[0];
-        await get().selectEnvironment(defaultEnv.id);
+        const currentActiveId = get().activeEnvironmentId;
+        const exists = environments.some((e) => e.id === currentActiveId);
+        if (!exists) {
+          const defaultEnv =
+            environments.find((e) => e.is_default) || environments[0];
+          await get().selectEnvironment(defaultEnv.id);
+        } else if (currentActiveId) {
+          await get().refreshVariables(currentActiveId);
+        }
       } else {
         set({ activeEnvironmentId: null, variables: [] });
       }

@@ -21,6 +21,7 @@ pub fn run() {
             delete_project_cmd,
             list_environments_cmd,
             create_environment_cmd,
+            update_environment_cmd,
             duplicate_environment_cmd,
             delete_environment_cmd,
             list_variables_cmd,
