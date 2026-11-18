@@ -15,8 +15,15 @@ import {
   Layers,
   FolderGit2,
   ClipboardPaste,
+  Search,
+  ShieldAlert,
+  Share2,
 } from "lucide-react";
-import type { VarType } from "../lib/types";
+import { EditVariableModal } from "./EditVariableModal";
+import { SecurityAuditModal } from "./SecurityAuditModal";
+import { QuickExportModal } from "./QuickExportModal";
+import { DuplicateEnvironmentModal } from "./DuplicateEnvironmentModal";
+import type { VariableSummary, VarType } from "../lib/types";
 
 interface ProjectDetailViewProps {
   onNewEnvironment: () => void;
@@ -34,12 +41,23 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const environments = useVaultStore((s) => s.environments);
   const activeEnvironmentId = useVaultStore((s) => s.activeEnvironmentId);
   const selectEnvironment = useVaultStore((s) => s.selectEnvironment);
+  const refreshEnvironments = useVaultStore((s) => s.refreshEnvironments);
   const variables = useVaultStore((s) => s.variables);
   const refreshVariables = useVaultStore((s) => s.refreshVariables);
 
   // Variable reveal states (ephemeral in React state, cleared immediately on navigation)
   const [revealedValues, setRevealedValues] = useState<Record<string, string>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Search & Type Filter
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+
+  // Sub-Modals
+  const [editingVar, setEditingVar] = useState<VariableSummary | null>(null);
+  const [isQuickExportOpen, setIsQuickExportOpen] = useState(false);
+  const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [isDuplicateEnvOpen, setIsDuplicateEnvOpen] = useState(false);
 
   // Variable form modal
   const [isAddingVar, setIsAddingVar] = useState(false);
@@ -57,6 +75,29 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const activeEnv = environments.find((e) => e.id === activeEnvironmentId);
+
+  const handleDeleteEnvironment = async () => {
+    if (!activeEnvironmentId || !activeProjectId || !activeEnv) return;
+    if (confirm(`Are you sure you want to delete environment "${activeEnv.name}"?`)) {
+      try {
+        await api.deleteEnvironment(activeEnvironmentId);
+        await refreshEnvironments(activeProjectId);
+      } catch (e: any) {
+        alert("Failed to delete environment: " + e.toString());
+      }
+    }
+  };
+
+  const filteredVariables = variables.filter((v) => {
+    const matchesSearch =
+      v.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (v.description && v.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      v.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    const matchesType = typeFilter === "all" || v.var_type === typeFilter;
+
+    return matchesSearch && matchesType;
+  });
 
   const handleToggleReveal = async (varId: string) => {
     if (!activeEnvironmentId) return;
@@ -171,11 +212,31 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => setIsAuditOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 rounded-lg text-xs font-medium transition"
+            title="Scan secrets for security risks & weak defaults"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+            <span>Audit</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsQuickExportOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 rounded-lg text-xs font-medium transition"
+            title="Quick copy as Docker -e, Shell export, JSON or .env"
+          >
+            <Share2 className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Quick Copy</span>
+          </button>
+
+          <button
+            type="button"
             onClick={onImport}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-medium transition"
           >
             <FileDown className="w-3.5 h-3.5" />
-            <span>Import File</span>
+            <span>Import</span>
           </button>
 
           <button
@@ -197,7 +258,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
             className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-lg text-xs font-medium transition"
           >
             <ClipboardPaste className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Paste Full .env</span>
+            <span>Paste .env</span>
           </button>
 
           <button
@@ -256,6 +317,29 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
             <span>Add Env</span>
           </button>
         </div>
+
+        {/* Environment Quick Actions */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsDuplicateEnvOpen(true)}
+            className="flex items-center gap-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800/60 px-2.5 py-1 rounded-md text-xs transition border border-transparent hover:border-zinc-700"
+            title="Duplicate / Clone this Environment"
+          >
+            <Copy className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Clone Env</span>
+          </button>
+          {environments.length > 1 && (
+            <button
+              type="button"
+              onClick={handleDeleteEnvironment}
+              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/30 rounded transition"
+              title="Delete this Environment"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Production Warning Banner */}
@@ -270,6 +354,40 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
       {/* Variables Table */}
       <div className="flex-1 overflow-y-auto p-6">
+        {/* Search & Filter Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search variables (key, type, tag)..."
+              className="w-full bg-[#141416] border border-[#27272a] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {["all", "secret", "public", "configuration", "url"].map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTypeFilter(t)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition uppercase tracking-wider ${
+                  typeFilter === t
+                    ? "bg-indigo-600/20 text-indigo-300 border border-indigo-500/30"
+                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+            <span className="text-[11px] text-zinc-500 ml-2 font-mono shrink-0">
+              {filteredVariables.length} of {variables.length}
+            </span>
+          </div>
+        </div>
+
         <div className="bg-[#141416] border border-[#1e1e22] rounded-xl overflow-hidden shadow-sm">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -282,7 +400,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e1e22]">
-              {variables.map((v) => {
+              {filteredVariables.map((v) => {
                 const isRevealed = !!revealedValues[v.id];
                 const displayedVal = isRevealed ? revealedValues[v.id] : "••••••••••••";
 
@@ -337,6 +455,15 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
                         <button
                           type="button"
+                          onClick={() => setEditingVar(v)}
+                          className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition"
+                          title="Edit Variable"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => handleDeleteVariable(v.id)}
                           className="p-1.5 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-400 rounded transition"
                           title="Delete Variable"
@@ -349,36 +476,42 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                 );
               })}
 
-              {variables.length === 0 && (
+              {filteredVariables.length === 0 && (
                 <tr>
                   <td colSpan={5} className="py-14 text-center">
                     <div className="max-w-xs mx-auto space-y-3">
-                      <p className="text-zinc-400 text-xs">No variables in this environment yet.</p>
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddVarMode("single");
-                            setFormError(null);
-                            setIsAddingVar(true);
-                          }}
-                          className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-medium transition"
-                        >
-                          + Add Single
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddVarMode("bulk");
-                            setFormError(null);
-                            setIsAddingVar(true);
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition shadow-md shadow-indigo-600/20"
-                        >
-                          <ClipboardPaste className="w-3.5 h-3.5" />
-                          <span>Paste Full .env</span>
-                        </button>
-                      </div>
+                      <p className="text-zinc-400 text-xs">
+                        {variables.length === 0
+                          ? "No variables in this environment yet."
+                          : "No variables match your search filter."}
+                      </p>
+                      {variables.length === 0 && (
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddVarMode("single");
+                              setFormError(null);
+                              setIsAddingVar(true);
+                            }}
+                            className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-medium transition"
+                          >
+                            + Add Single
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddVarMode("bulk");
+                              setFormError(null);
+                              setIsAddingVar(true);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition shadow-md shadow-indigo-600/20"
+                          >
+                            <ClipboardPaste className="w-3.5 h-3.5" />
+                            <span>Paste Full .env</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -579,6 +712,31 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Edit Variable Modal */}
+      <EditVariableModal
+        variable={editingVar}
+        isOpen={!!editingVar}
+        onClose={() => setEditingVar(null)}
+      />
+
+      {/* Security Health & Leak Audit Modal */}
+      <SecurityAuditModal
+        isOpen={isAuditOpen}
+        onClose={() => setIsAuditOpen(false)}
+      />
+
+      {/* Quick Export Formats Modal */}
+      <QuickExportModal
+        isOpen={isQuickExportOpen}
+        onClose={() => setIsQuickExportOpen(false)}
+      />
+
+      {/* Duplicate Environment Modal */}
+      <DuplicateEnvironmentModal
+        isOpen={isDuplicateEnvOpen}
+        onClose={() => setIsDuplicateEnvOpen(false)}
+      />
     </div>
   );
 };

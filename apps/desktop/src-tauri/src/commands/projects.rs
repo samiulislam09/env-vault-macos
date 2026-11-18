@@ -140,3 +140,58 @@ pub async fn create_project_cmd(
         Ok(project)
     }).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn delete_project_cmd(
+    project_id: String,
+    state: State<'_, VaultState>,
+) -> Result<(), String> {
+    let pid = ProjectId::parse(&project_id).map_err(|e| e.to_string())?;
+
+    state.with_unlocked_mut(|vault| {
+        let entry_idx = vault
+            .manifest
+            .projects
+            .iter()
+            .position(|p| p.id == pid)
+            .ok_or_else(|| LvError::ProjectNotFound(project_id.clone()))?;
+
+        let entry = vault.manifest.projects.remove(entry_idx);
+        let proj_record_path = vault.paths.record_file(&entry.record_id);
+        let _ = std::fs::remove_file(proj_record_path);
+
+        // Remove associated environments and their record files
+        let env_entries_to_remove: Vec<_> = vault
+            .manifest
+            .environments
+            .iter()
+            .filter(|e| e.project_id == pid)
+            .cloned()
+            .collect();
+
+        for e in env_entries_to_remove {
+            let env_record_path = vault.paths.record_file(&e.record_id);
+            let _ = std::fs::remove_file(env_record_path);
+        }
+
+        vault.manifest.environments.retain(|e| e.project_id != pid);
+
+        // Remove from workspace record
+        for ws_entry in &vault.manifest.workspaces {
+            if ws_entry.id == entry.workspace_id {
+                if let Ok(mut ws_rec) =
+                    WorkspaceRecord::load(&ws_entry.record_id, &vault.vek, &vault.paths)
+                {
+                    ws_rec.project_ids.retain(|id| *id != pid);
+                    let _ = ws_rec.save(&ws_entry.record_id, &vault.vek, &vault.paths);
+                }
+            }
+        }
+
+        // Save updated manifest
+        let manifest_bytes = vault.manifest.encrypt(&vault.vek)?;
+        atomic_write(&vault.paths.manifest_file(), &manifest_bytes)?;
+
+        Ok(())
+    }).map_err(|e| e.to_string())
+}

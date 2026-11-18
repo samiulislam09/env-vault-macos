@@ -1,5 +1,6 @@
 import React from "react";
 import { useVaultStore } from "../stores/vault-store";
+import { api } from "../lib/tauri";
 import {
   Shield,
   LayoutDashboard,
@@ -9,19 +10,36 @@ import {
   Lock,
   Plus,
   Layers,
+  Search,
+  Trash2,
 } from "lucide-react";
 
 interface SidebarProps {
   onNewProject: () => void;
+  onOpenCommandPalette: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ onNewProject, onOpenCommandPalette }) => {
   const activeView = useVaultStore((s) => s.activeView);
   const setActiveView = useVaultStore((s) => s.setActiveView);
   const projects = useVaultStore((s) => s.projects);
   const activeProjectId = useVaultStore((s) => s.activeProjectId);
   const selectProject = useVaultStore((s) => s.selectProject);
+  const refreshProjects = useVaultStore((s) => s.refreshProjects);
   const lockVault = useVaultStore((s) => s.lockVault);
+
+  const handleDeleteProject = async (e: React.MouseEvent, projId: string, projName: string) => {
+    e.stopPropagation();
+    if (confirm(`Are you sure you want to delete project "${projName}" and all its encrypted environments?`)) {
+      try {
+        await api.deleteProject(projId);
+        await refreshProjects();
+        setActiveView("dashboard");
+      } catch (err) {
+        console.error("Failed to delete project:", err);
+      }
+    }
+  };
 
   return (
     <aside className="w-64 bg-[#0d0d0f] border-r border-[#1e1e22] flex flex-col h-screen select-none shrink-0">
@@ -40,6 +58,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
 
       {/* Main Nav */}
       <div className="p-3 space-y-1">
+        {/* Quick Command Palette Button */}
+        <button
+          type="button"
+          onClick={onOpenCommandPalette}
+          className="w-full flex items-center justify-between px-3 py-2 mb-2 bg-[#141416] hover:bg-zinc-800 text-zinc-400 hover:text-white border border-[#27272a] rounded-lg text-xs font-medium transition group"
+        >
+          <div className="flex items-center gap-2">
+            <Search className="w-3.5 h-3.5 text-zinc-500 group-hover:text-indigo-400 transition" />
+            <span>Search & Commands</span>
+          </div>
+          <kbd className="px-1.5 py-0.5 text-[10px] bg-zinc-800 text-zinc-400 border border-zinc-700 rounded font-mono">
+            ⌘K
+          </kbd>
+        </button>
+
         <button
           type="button"
           onClick={() => setActiveView("dashboard")}
@@ -98,24 +131,35 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
           {projects.map((proj) => {
             const isSelected = activeProjectId === proj.id && activeView === "project";
             return (
-              <button
+              <div
                 key={proj.id}
-                type="button"
                 onClick={() => selectProject(proj.id)}
-                className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition text-left truncate ${
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-medium transition cursor-pointer group ${
                   isSelected
                     ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/20"
                     : "text-zinc-300 hover:bg-zinc-800/40 hover:text-white"
                 }`}
               >
-                <FolderGit2 className="w-3.5 h-3.5 shrink-0 opacity-70" />
-                <span className="truncate">{proj.name}</span>
-                {proj.environment_ids.length > 0 && (
-                  <span className="ml-auto text-[10px] text-zinc-500 font-mono">
-                    {proj.environment_ids.length}
-                  </span>
-                )}
-              </button>
+                <div className="flex items-center gap-2 truncate">
+                  <FolderGit2 className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                  <span className="truncate">{proj.name}</span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {proj.environment_ids.length > 0 && (
+                    <span className="text-[10px] text-zinc-500 font-mono">
+                      {proj.environment_ids.length}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteProject(e, proj.id, proj.name)}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 hover:bg-rose-950/40 rounded transition"
+                    title="Delete Project"
+                  >
+                    <Trash2 className="w-3 h-3 text-zinc-400 hover:text-rose-400" />
+                  </button>
+                </div>
+              </div>
             );
           })}
 
@@ -135,7 +179,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNewProject }) => {
           className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-zinc-900 hover:bg-rose-950/40 hover:text-rose-300 border border-zinc-800 hover:border-rose-800/40 text-zinc-400 rounded-lg text-xs font-medium transition"
         >
           <Lock className="w-3.5 h-3.5" />
-          <span>Lock Vault</span>
+          <span>Lock Vault (⌘L)</span>
         </button>
       </div>
     </aside>

@@ -39,6 +39,8 @@ export const api = {
     icon?: string;
     rootDirectory?: string;
   }) => invoke<ProjectRecord>("create_project_cmd", { input }),
+  deleteProject: (projectId: string) =>
+    invoke<void>("delete_project_cmd", { projectId }),
 
   // Environment commands
   listEnvironments: (projectId: string) =>
@@ -52,6 +54,12 @@ export const api = {
     isProduction: boolean;
     templateId?: string;
   }) => invoke<EnvironmentRecord>("create_environment_cmd", { input }),
+  duplicateEnvironment: (sourceEnvId: string, name: string, isProduction: boolean) =>
+    invoke<EnvironmentRecord>("duplicate_environment_cmd", {
+      input: { sourceEnvId, name, isProduction },
+    }),
+  deleteEnvironment: (envId: string) =>
+    invoke<void>("delete_environment_cmd", { envId }),
 
   // Variable commands
   listVariables: (envId: string) =>
