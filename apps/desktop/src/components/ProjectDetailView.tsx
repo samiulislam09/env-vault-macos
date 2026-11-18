@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Layers,
   FolderGit2,
+  ClipboardPaste,
 } from "lucide-react";
 import type { VarType } from "../lib/types";
 
@@ -42,11 +43,17 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
   // Variable form modal
   const [isAddingVar, setIsAddingVar] = useState(false);
+  const [addVarMode, setAddVarMode] = useState<"single" | "bulk">("single");
   const [varKey, setVarKey] = useState("");
   const [varValue, setVarValue] = useState("");
   const [varType, setVarType] = useState<VarType>("secret");
   const [varDescription, setVarDescription] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Bulk .env import
+  const [bulkContent, setBulkContent] = useState("");
+  const [bulkStrategy, setBulkStrategy] = useState<"overwrite" | "skip">("overwrite");
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const activeEnv = environments.find((e) => e.id === activeEnvironmentId);
@@ -108,6 +115,29 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     }
   };
 
+  const detectedBulkCount = bulkContent
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("#") && l.includes("=")).length;
+
+  const handleBulkImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeEnvironmentId || !bulkContent.trim()) return;
+    setFormError(null);
+
+    try {
+      setBulkLoading(true);
+      await api.executeImport(activeEnvironmentId, bulkContent, "dotenv", bulkStrategy);
+      setIsAddingVar(false);
+      setBulkContent("");
+      await refreshVariables(activeEnvironmentId);
+    } catch (err: any) {
+      setFormError(err.toString());
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const handleDeleteVariable = async (varId: string) => {
     if (!activeEnvironmentId) return;
     if (confirm("Are you sure you want to delete this variable?")) {
@@ -145,7 +175,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
             className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-medium transition"
           >
             <FileDown className="w-3.5 h-3.5" />
-            <span>Import .env</span>
+            <span>Import File</span>
           </button>
 
           <button
@@ -159,11 +189,28 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
           <button
             type="button"
-            onClick={() => setIsAddingVar(true)}
+            onClick={() => {
+              setAddVarMode("bulk");
+              setFormError(null);
+              setIsAddingVar(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-lg text-xs font-medium transition"
+          >
+            <ClipboardPaste className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Paste Full .env</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setAddVarMode("single");
+              setFormError(null);
+              setIsAddingVar(true);
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition shadow-md shadow-indigo-600/20"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Add Variable</span>
+            <span>Add Single</span>
           </button>
         </div>
       </div>
@@ -304,8 +351,35 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
               {variables.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-zinc-500">
-                    No variables in this environment yet.
+                  <td colSpan={5} className="py-14 text-center">
+                    <div className="max-w-xs mx-auto space-y-3">
+                      <p className="text-zinc-400 text-xs">No variables in this environment yet.</p>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddVarMode("single");
+                            setFormError(null);
+                            setIsAddingVar(true);
+                          }}
+                          className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-medium transition"
+                        >
+                          + Add Single
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddVarMode("bulk");
+                            setFormError(null);
+                            setIsAddingVar(true);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition shadow-md shadow-indigo-600/20"
+                        >
+                          <ClipboardPaste className="w-3.5 h-3.5" />
+                          <span>Paste Full .env</span>
+                        </button>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -314,11 +388,42 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         </div>
       </div>
 
-      {/* Add Variable Modal */}
+      {/* Add Variable Modal (Single or Bulk) */}
       {isAddingVar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-[#141416] border border-[#1e1e22] rounded-xl w-full max-w-md p-6 shadow-2xl">
-            <h3 className="font-semibold text-white text-base mb-4">Add Variable</h3>
+          <div className="bg-[#141416] border border-[#1e1e22] rounded-xl w-full max-w-lg p-6 shadow-2xl">
+            {/* Mode Switcher Tabs */}
+            <div className="flex items-center gap-4 border-b border-[#27272a] pb-3 mb-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddVarMode("single");
+                  setFormError(null);
+                }}
+                className={`text-xs font-semibold pb-1 border-b-2 transition -mb-[13px] ${
+                  addVarMode === "single"
+                    ? "border-indigo-500 text-white"
+                    : "border-transparent text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Single Property
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddVarMode("bulk");
+                  setFormError(null);
+                }}
+                className={`text-xs font-semibold pb-1 border-b-2 transition -mb-[13px] flex items-center gap-1.5 ${
+                  addVarMode === "bulk"
+                    ? "border-indigo-500 text-white"
+                    : "border-transparent text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                <ClipboardPaste className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Paste Full .env</span>
+              </button>
+            </div>
 
             {formError && (
               <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-300 text-xs mb-4">
@@ -326,78 +431,151 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               </div>
             )}
 
-            <form onSubmit={handleCreateVariable} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Key Name</label>
-                <input
-                  type="text"
-                  required
-                  autoFocus
-                  placeholder="DATABASE_URL"
-                  value={varKey}
-                  onChange={(e) => setVarKey(e.target.value)}
-                  className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1">Secret Value</label>
-                <textarea
-                  required
-                  rows={2}
-                  placeholder="postgres://user:pass@localhost:5432/db"
-                  value={varValue}
-                  onChange={(e) => setVarValue(e.target.value)}
-                  className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+            {addVarMode === "single" ? (
+              <form onSubmit={handleCreateVariable} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-medium text-zinc-300 mb-1">Type</label>
-                  <select
-                    value={varType}
-                    onChange={(e) => setVarType(e.target.value as VarType)}
-                    className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition"
-                  >
-                    <option value="secret">Secret</option>
-                    <option value="public">Public</option>
-                    <option value="configuration">Configuration</option>
-                    <option value="number">Number</option>
-                    <option value="boolean">Boolean</option>
-                    <option value="url">URL</option>
-                    <option value="json">JSON</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-zinc-300 mb-1">Description (Optional)</label>
+                  <label className="block text-xs font-medium text-zinc-300 mb-1">Key Name</label>
                   <input
                     type="text"
-                    placeholder="Database conn string"
-                    value={varDescription}
-                    onChange={(e) => setVarDescription(e.target.value)}
-                    className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
+                    required
+                    autoFocus
+                    placeholder="DATABASE_URL"
+                    value={varKey}
+                    onChange={(e) => setVarKey(e.target.value)}
+                    className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
                   />
                 </div>
-              </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddingVar(false)}
-                  className="px-3 py-2 text-zinc-400 hover:text-white text-xs font-medium transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition shadow-md shadow-indigo-600/20"
-                >
-                  Save Variable
-                </button>
-              </div>
-            </form>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-300 mb-1">Secret Value</label>
+                  <textarea
+                    required
+                    rows={3}
+                    placeholder="postgres://user:pass@localhost:5432/db"
+                    value={varValue}
+                    onChange={(e) => setVarValue(e.target.value)}
+                    className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-sm text-white font-mono placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1">Type</label>
+                    <select
+                      value={varType}
+                      onChange={(e) => setVarType(e.target.value as VarType)}
+                      className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition"
+                    >
+                      <option value="secret">Secret</option>
+                      <option value="public">Public</option>
+                      <option value="configuration">Configuration</option>
+                      <option value="number">Number</option>
+                      <option value="boolean">Boolean</option>
+                      <option value="url">URL</option>
+                      <option value="json">JSON</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1">Description (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="Database connection string"
+                      value={varDescription}
+                      onChange={(e) => setVarDescription(e.target.value)}
+                      className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingVar(false)}
+                    className="px-3 py-2 text-zinc-400 hover:text-white text-xs font-medium transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition shadow-md shadow-indigo-600/20"
+                  >
+                    Save Variable
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleBulkImport} className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-medium text-zinc-300">
+                      Paste .env Content
+                    </label>
+                    <span className="text-[11px] text-zinc-400 font-mono">
+                      {detectedBulkCount} {detectedBulkCount === 1 ? "variable" : "variables"} detected
+                    </span>
+                  </div>
+                  <textarea
+                    rows={9}
+                    autoFocus
+                    value={bulkContent}
+                    onChange={(e) => setBulkContent(e.target.value)}
+                    placeholder={`PORT=3000\nDATABASE_URL=postgres://user:secret@localhost:5432/db\nAPI_KEY=sk_live_123456789\nNEXT_PUBLIC_APP_NAME="LocalVault"`}
+                    className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg p-3 text-xs font-mono text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500 transition leading-relaxed"
+                  />
+                  <p className="text-[11px] text-zinc-500 mt-1">
+                    Supports multiline variables, double/single quotes, escapes, and comments (#).
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-zinc-400 bg-[#0d0d0f] p-2.5 rounded-lg border border-[#27272a]">
+                  <span>If variable already exists:</span>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-zinc-300">
+                      <input
+                        type="radio"
+                        name="bulkStrategy"
+                        value="overwrite"
+                        checked={bulkStrategy === "overwrite"}
+                        onChange={() => setBulkStrategy("overwrite")}
+                        className="text-indigo-600"
+                      />
+                      <span>Overwrite</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-zinc-300">
+                      <input
+                        type="radio"
+                        name="bulkStrategy"
+                        value="skip"
+                        checked={bulkStrategy === "skip"}
+                        onChange={() => setBulkStrategy("skip")}
+                        className="text-indigo-600"
+                      />
+                      <span>Keep existing</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingVar(false)}
+                    className="px-3 py-2 text-zinc-400 hover:text-white text-xs font-medium transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={bulkLoading || detectedBulkCount === 0}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition shadow-md shadow-indigo-600/20"
+                  >
+                    {bulkLoading
+                      ? "Saving..."
+                      : `Add ${detectedBulkCount > 0 ? detectedBulkCount : ""} Variables`}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
