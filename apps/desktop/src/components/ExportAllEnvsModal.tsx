@@ -208,6 +208,24 @@ export const ExportAllEnvsModal: React.FC<ExportAllEnvsModalProps> = ({
       const text = await generateFullExport();
 
       const ext = format === "json" ? "json" : format === "shell" ? "sh" : "env";
+      const defaultFilename = `localvault-all-envs-${new Date().toISOString().slice(0, 10)}.${ext}`;
+
+      try {
+        const downloads = await api.getDownloadsDir();
+        const chosen = await api.pickExportPath(downloads, defaultFilename);
+        if (chosen) {
+          await api.writeExportedFile(chosen, text);
+          setDownloaded(true);
+          setTimeout(() => setDownloaded(false), 2000);
+          return;
+        } else {
+          // User cancelled file picker dialog
+          return;
+        }
+      } catch (nativeErr) {
+        console.warn("Native file picker unavailable, using fallback:", nativeErr);
+      }
+
       const mime =
         format === "json"
           ? "application/json"
@@ -218,7 +236,7 @@ export const ExportAllEnvsModal: React.FC<ExportAllEnvsModalProps> = ({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `localvault-all-envs-${new Date().toISOString().slice(0, 10)}.${ext}`;
+      a.download = defaultFilename;
       a.click();
       URL.revokeObjectURL(url);
 

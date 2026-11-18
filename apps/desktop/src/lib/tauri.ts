@@ -142,9 +142,25 @@ export const api = {
   ) =>
     invoke<void>("export_environment_cmd", {
       envId,
+      env_id: envId,
       destPath,
+      dest_path: destPath,
       format,
       confirmed,
+    }),
+  getDownloadsDir: () => invoke<string>("get_downloads_dir_cmd"),
+  pickExportPath: (defaultDir?: string, defaultFilename?: string) =>
+    invoke<string | null>("pick_export_path_cmd", {
+      defaultDir,
+      default_dir: defaultDir,
+      defaultFilename,
+      default_filename: defaultFilename,
+    }),
+  writeExportedFile: (destPath: string, content: string) =>
+    invoke<void>("write_exported_file_cmd", {
+      destPath,
+      dest_path: destPath,
+      content,
     }),
 
   // Backups

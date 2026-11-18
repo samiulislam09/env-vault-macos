@@ -115,6 +115,75 @@ pub async fn execute_import_cmd(
     }).map_err(|e| e.to_string())
 }
 
+fn resolve_filesystem_path(raw: &str) -> std::path::PathBuf {
+    if raw.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return std::path::PathBuf::from(format!("{}{}", home, &raw[1..]));
+        }
+    } else if raw == "~" {
+        if let Ok(home) = std::env::var("HOME") {
+            return std::path::PathBuf::from(home);
+        }
+    }
+    std::path::PathBuf::from(raw)
+}
+
+#[tauri::command]
+pub async fn get_downloads_dir_cmd() -> Result<String, String> {
+    if let Ok(home) = std::env::var("HOME") {
+        let downloads = std::path::PathBuf::from(home).join("Downloads");
+        if downloads.exists() {
+            return Ok(downloads.to_string_lossy().to_string());
+        }
+    }
+    Ok(std::env::current_dir().unwrap_or_default().to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn pick_export_path_cmd(
+    default_dir: Option<String>,
+    default_filename: Option<String>,
+) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut dialog = rfd::FileDialog::new();
+
+        let initial_dir = match default_dir {
+            Some(d) if !d.is_empty() => Some(resolve_filesystem_path(&d)),
+            _ => std::env::var("HOME").ok().map(|h| std::path::PathBuf::from(h).join("Downloads")),
+        };
+
+        if let Some(ref dir) = initial_dir {
+            if dir.exists() {
+                dialog = dialog.set_directory(dir);
+            }
+        }
+
+        if let Some(ref name) = default_filename {
+            dialog = dialog.set_file_name(name);
+        }
+
+        let path = dialog.save_file();
+        Ok(path.map(|p| p.to_string_lossy().to_string()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn write_exported_file_cmd(
+    dest_path: String,
+    content: String,
+) -> Result<(), String> {
+    let resolved = resolve_filesystem_path(&dest_path);
+    if let Some(parent) = resolved.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(LvError::Io).map_err(|e| e.to_string())?;
+        }
+    }
+    fs::write(&resolved, content).map_err(LvError::Io).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn export_environment_cmd(
     env_id: String,
@@ -128,6 +197,13 @@ pub async fn export_environment_cmd(
     }
 
     let eid = EnvId::parse(&env_id).map_err(|e| e.to_string())?;
+    let resolved = resolve_filesystem_path(&dest_path);
+
+    if let Some(parent) = resolved.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(LvError::Io).map_err(|e| e.to_string())?;
+        }
+    }
 
     state.with_unlocked(|vault| {
         let entry = vault
@@ -144,7 +220,7 @@ pub async fn export_environment_cmd(
             ExportFormat::Json => format_json_vars(&env.variables)?,
         };
 
-        fs::write(&dest_path, content).map_err(LvError::Io)?;
+        fs::write(&resolved, content).map_err(LvError::Io)?;
         Ok(())
     }).map_err(|e| e.to_string())
 }
