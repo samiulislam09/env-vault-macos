@@ -1,6 +1,6 @@
 use localvault_core::{LvError, LvResult, RecordId};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::permissions::restrict_dir_permissions;
 

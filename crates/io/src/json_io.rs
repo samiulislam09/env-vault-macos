@@ -1,4 +1,4 @@
-use localvault_core::{LvError, LvResult, VarType};
+use localvault_core::{LvError, LvResult};
 use localvault_variables::Variable;
 use serde_json::Value;
 use std::collections::BTreeMap;

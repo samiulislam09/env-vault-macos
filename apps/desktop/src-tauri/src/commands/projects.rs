@@ -1,4 +1,4 @@
-use localvault_core::{ProjectId, RecordId, WorkspaceId};
+use localvault_core::{LvError, ProjectId, RecordId, WorkspaceId};
 use localvault_projects::{ProjectRecord, WorkspaceRecord};
 use localvault_storage::atomic_write;
 use localvault_vault::{ProjectEntry, VaultState, WorkspaceEntry};
@@ -85,7 +85,8 @@ pub async fn create_project_cmd(
     state.with_unlocked_mut(|vault| {
         // Resolve or create default workspace if none specified
         let ws_id = match input.workspace_id {
-            Some(id_str) => WorkspaceId::parse(&id_str).map_err(|e| e.to_string())?,
+            Some(id_str) => WorkspaceId::parse(&id_str)
+                .map_err(|_| LvError::WorkspaceNotFound(id_str))?,
             None => {
                 if let Some(first_ws) = vault.manifest.workspaces.first() {
                     first_ws.id

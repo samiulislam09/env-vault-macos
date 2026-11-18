@@ -4,7 +4,6 @@ use localvault_core::{
 };
 use localvault_crypto::{decrypt_blob, encrypt_blob};
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroizing;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceEntry {

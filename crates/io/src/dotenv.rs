@@ -1,4 +1,4 @@
-use localvault_core::{LvError, LvResult, VarType};
+use localvault_core::LvResult;
 use localvault_variables::{validate_variable_key, Variable};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,6 +199,7 @@ pub fn format_dotenv(variables: &[Variable]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use localvault_core::VarType;
 
     #[test]
     fn test_parse_simple_dotenv() {

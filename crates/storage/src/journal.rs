@@ -1,7 +1,7 @@
 use localvault_core::{now_timestamp, LvError, LvResult, RecordId};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::atomic::atomic_write;

@@ -29,8 +29,7 @@ impl KdfParams {
         }
     }
 
-    /// Lower-cost parameters for testing.
-    #[cfg(test)]
+    /// Lower-cost parameters for testing and benchmarks.
     pub fn test_params() -> Self {
         Self {
             m_cost: 1024, // 1 MiB

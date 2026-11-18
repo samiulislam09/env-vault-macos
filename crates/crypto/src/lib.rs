@@ -9,5 +9,5 @@ pub use aead::{decrypt, encrypt};
 pub use format::{EncryptedBlob, decrypt_blob, encrypt_blob};
 pub use kdf::{derive_kek, KdfParams};
 pub use keys::{generate_vek, wrap_key, unwrap_key};
-pub use nonce::generate_nonce;
+pub use nonce::{generate_nonce, generate_salt};
 pub use recovery::generate_recovery_key;

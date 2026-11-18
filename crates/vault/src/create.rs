@@ -2,17 +2,18 @@ use localvault_core::{
     MIN_PASSWORD_LENGTH, LvError, LvResult, VaultId,
 };
 use localvault_crypto::{
-    derive_kek, generate_nonce, generate_recovery_key, generate_salt, generate_vek,
+    derive_kek, generate_recovery_key, generate_salt, generate_vek,
     recovery::decode_recovery_key, wrap_key, KdfParams,
 };
 use localvault_crypto::keys::create_verify_blob;
 use localvault_storage::{atomic_write, VaultPaths};
-use zeroize::Zeroizing;
 
 use crate::header::VaultHeader;
 use crate::manifest::Manifest;
 
-#[derive(Debug, Clone)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultCreated {
     pub vault_id: VaultId,
     pub recovery_key: String,

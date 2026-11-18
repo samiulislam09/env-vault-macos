@@ -1,5 +1,5 @@
 use localvault_core::{
-    now_timestamp, LvError, LvResult, RecordType, VaultId,
+    now_timestamp, LvError, LvResult, RecordType,
 };
 use localvault_crypto::{
     decrypt_blob, derive_kek, encrypt_blob, generate_salt, KdfParams,
