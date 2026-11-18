@@ -1,0 +1,21 @@
+[package]
+name = "localvault-crypto"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Cryptographic engine for LocalVault — Argon2id KDF, XChaCha20-Poly1305 AEAD, key management"
+
+[dependencies]
+localvault-core = { workspace = true }
+argon2 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+rand = { workspace = true }
+zeroize = { workspace = true }
+secrecy = { workspace = true }
+serde = { workspace = true }
+base32 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

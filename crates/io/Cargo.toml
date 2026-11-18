@@ -1,0 +1,17 @@
+[package]
+name = "localvault-io"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Secure import and export engine for .env and JSON formats in LocalVault"
+
+[dependencies]
+localvault-core = { workspace = true }
+localvault-variables = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

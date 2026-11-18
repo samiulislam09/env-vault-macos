@@ -1,0 +1,27 @@
+[package]
+name = "localvault-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "LocalVault companion CLI for environment variable injection and vault management"
+
+[[bin]]
+name = "localvault"
+path = "src/main.rs"
+
+[dependencies]
+localvault-core = { workspace = true }
+localvault-crypto = { workspace = true }
+localvault-storage = { workspace = true }
+localvault-vault = { workspace = true }
+localvault-projects = { workspace = true }
+localvault-environments = { workspace = true }
+localvault-variables = { workspace = true }
+localvault-io = { workspace = true }
+localvault-backup = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

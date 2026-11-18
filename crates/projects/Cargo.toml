@@ -1,0 +1,20 @@
+[package]
+name = "localvault-projects"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Workspace and Project management for LocalVault"
+
+[dependencies]
+localvault-core = { workspace = true }
+localvault-crypto = { workspace = true }
+localvault-storage = { workspace = true }
+localvault-vault = { workspace = true }
+serde = { workspace = true }
+rmp-serde = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,0 +1,17 @@
+[package]
+name = "localvault-variables"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Variable definitions, validation, and environment comparison engine for LocalVault"
+
+[dependencies]
+localvault-core = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
