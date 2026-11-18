@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useVaultStore } from "../stores/vault-store";
 import {
   FolderGit2,
@@ -7,7 +7,9 @@ import {
   HardDrive,
   Plus,
   ArrowUpRight,
+  Download,
 } from "lucide-react";
+import { ExportAllEnvsModal } from "./ExportAllEnvsModal";
 
 interface DashboardViewProps {
   onNewProject: () => void;
@@ -19,6 +21,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNewProject }) =>
   const vaultPath = useVaultStore((s) => s.vaultPath);
   const selectProject = useVaultStore((s) => s.selectProject);
 
+  const [isExportAllOpen, setIsExportAllOpen] = useState(false);
+
   return (
     <div className="flex-1 overflow-y-auto p-8 max-w-5xl">
       <div className="flex items-center justify-between mb-8">
@@ -28,14 +32,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNewProject }) =>
             Local-first, encrypted secrets overview.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onNewProject}
-          className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition shadow-md shadow-indigo-600/20"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Project</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setIsExportAllOpen(true)}
+            disabled={projects.length === 0}
+            className="flex items-center gap-2 px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 border border-zinc-700 rounded-lg text-xs font-medium transition shadow-sm"
+            title="Export all projects & environments into a single bundle"
+          >
+            <Download className="w-4 h-4 text-indigo-400" />
+            <span>Export All Envs</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onNewProject}
+            className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition shadow-md shadow-indigo-600/20"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Project</span>
+          </button>
+        </div>
       </div>
 
       {/* Metrics Grid */}
@@ -124,6 +141,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNewProject }) =>
           </div>
         )}
       </div>
+
+      {/* Export All Environments Modal */}
+      <ExportAllEnvsModal
+        isOpen={isExportAllOpen}
+        onClose={() => setIsExportAllOpen(false)}
+      />
     </div>
   );
 };
