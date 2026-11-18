@@ -1,0 +1,11 @@
+{
+  "name": "localvault-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "yarn --cwd apps/desktop tauri dev",
+    "desktop": "yarn --cwd apps/desktop tauri dev",
+    "build:ui": "yarn --cwd apps/desktop build",
+    "build:cli": "cargo build --release -p localvault-cli",
+    "test": "cargo test --workspace"
+  }
+}
