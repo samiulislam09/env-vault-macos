@@ -23,6 +23,7 @@ import { EditVariableModal } from "./EditVariableModal";
 import { SecurityAuditModal } from "./SecurityAuditModal";
 import { QuickExportModal } from "./QuickExportModal";
 import { DuplicateEnvironmentModal } from "./DuplicateEnvironmentModal";
+import { ConfirmModal } from "./ConfirmModal";
 import type { VariableSummary, VarType } from "../lib/types";
 
 interface ProjectDetailViewProps {
@@ -74,34 +75,50 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [bulkStrategy, setBulkStrategy] = useState<"overwrite" | "skip">("overwrite");
   const [bulkLoading, setBulkLoading] = useState(false);
 
+  // In-app confirmation dialog state
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => Promise<void>;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    confirmLabel: "Delete",
+    onConfirm: async () => {},
+  });
+  const [isDeletingLoading, setIsDeletingLoading] = useState(false);
+
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const activeEnv = environments.find((e) => e.id === activeEnvironmentId);
 
-  const handleDeleteEnvironment = async () => {
+  const handleDeleteEnvironment = () => {
     if (!activeEnvironmentId || !activeProjectId || !activeEnv) return;
-    if (confirm(`Are you sure you want to delete environment "${activeEnv.name}"?`)) {
-      try {
+    setConfirmConfig({
+      isOpen: true,
+      title: "Delete Environment",
+      message: `Are you sure you want to delete environment "${activeEnv.name}" and all its encrypted secrets?`,
+      confirmLabel: "Delete Environment",
+      onConfirm: async () => {
         await api.deleteEnvironment(activeEnvironmentId);
         await refreshEnvironments(activeProjectId);
-      } catch (e: any) {
-        alert("Failed to delete environment: " + e.toString());
-      }
-    }
+      },
+    });
   };
 
-  const handleDeleteCurrentProject = async () => {
+  const handleDeleteCurrentProject = () => {
     if (!activeProject || !activeProjectId) return;
-    if (
-      confirm(
-        `Are you sure you want to permanently delete project "${activeProject.name}" and all its encrypted environments? This action cannot be undone.`
-      )
-    ) {
-      try {
+    setConfirmConfig({
+      isOpen: true,
+      title: "Delete Project",
+      message: `Are you sure you want to permanently delete project "${activeProject.name}" and all its encrypted environments? This action cannot be undone.`,
+      confirmLabel: "Delete Project",
+      onConfirm: async () => {
         await deleteProject(activeProjectId);
-      } catch (err: any) {
-        alert("Failed to delete project: " + err.toString());
-      }
-    }
+      },
+    });
   };
 
   const filteredVariables = variables.filter((v) => {
@@ -213,12 +230,18 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     }
   };
 
-  const handleDeleteVariable = async (varId: string) => {
+  const handleDeleteVariable = (varId: string, varKey: string) => {
     if (!activeEnvironmentId) return;
-    if (confirm("Are you sure you want to delete this variable?")) {
-      await api.deleteVariable(activeEnvironmentId, varId);
-      await refreshVariables(activeEnvironmentId);
-    }
+    setConfirmConfig({
+      isOpen: true,
+      title: "Delete Variable",
+      message: `Are you sure you want to delete the variable "${varKey}"?`,
+      confirmLabel: "Delete Variable",
+      onConfirm: async () => {
+        await api.deleteVariable(activeEnvironmentId, varId);
+        await refreshVariables(activeEnvironmentId);
+      },
+    });
   };
 
   if (!activeProject) {
@@ -508,7 +531,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
                         <button
                           type="button"
-                          onClick={() => handleDeleteVariable(v.id)}
+                          onClick={() => handleDeleteVariable(v.id, v.key)}
                           className="p-1.5 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-400 rounded transition"
                           title="Delete Variable"
                         >
@@ -780,6 +803,27 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
       <DuplicateEnvironmentModal
         isOpen={isDuplicateEnvOpen}
         onClose={() => setIsDuplicateEnvOpen(false)}
+      />
+
+      {/* In-App Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmConfig.isOpen}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmLabel={confirmConfig.confirmLabel}
+        isLoading={isDeletingLoading}
+        onConfirm={async () => {
+          try {
+            setIsDeletingLoading(true);
+            await confirmConfig.onConfirm();
+            setConfirmConfig((prev) => ({ ...prev, isOpen: false }));
+          } catch (err: any) {
+            alert("Action failed: " + err.toString());
+          } finally {
+            setIsDeletingLoading(false);
+          }
+        }}
+        onClose={() => setConfirmConfig((prev) => ({ ...prev, isOpen: false }))}
       />
     </div>
   );

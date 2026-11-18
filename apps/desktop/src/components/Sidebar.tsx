@@ -1,6 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
 import { useVaultStore } from "../stores/vault-store";
-import { api } from "../lib/tauri";
 import {
   Shield,
   LayoutDashboard,
@@ -13,6 +12,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
+import { ConfirmModal } from "./ConfirmModal";
 
 interface SidebarProps {
   onNewProject: () => void;
@@ -29,14 +29,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNewProject, onOpenCommandPal
   const refreshProjects = useVaultStore((s) => s.refreshProjects);
   const lockVault = useVaultStore((s) => s.lockVault);
 
-  const handleDeleteProject = async (e: React.MouseEvent, projId: string, projName: string) => {
-    e.stopPropagation();
-    if (confirm(`Are you sure you want to delete project "${projName}" and all its encrypted environments?`)) {
-      try {
-        await deleteProject(projId);
-      } catch (err: any) {
-        alert("Failed to delete project: " + err.toString());
-      }
+  const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleConfirmDelete = async () => {
+    if (!projectToDelete) return;
+    try {
+      setIsDeleting(true);
+      await deleteProject(projectToDelete.id);
+      setProjectToDelete(null);
+    } catch (err: any) {
+      alert("Failed to delete project: " + err.toString());
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -153,7 +158,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNewProject, onOpenCommandPal
                   )}
                   <button
                     type="button"
-                    onClick={(e) => handleDeleteProject(e, proj.id, proj.name)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setProjectToDelete({ id: proj.id, name: proj.name });
+                    }}
                     className="opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 hover:bg-rose-950/40 rounded transition"
                     title="Delete Project"
                   >
@@ -183,6 +191,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNewProject, onOpenCommandPal
           <span>Lock Vault (⌘L)</span>
         </button>
       </div>
+
+      <ConfirmModal
+        isOpen={!!projectToDelete}
+        title="Delete Project"
+        message={`Are you sure you want to permanently delete "${projectToDelete?.name}" and all its encrypted environments? This action cannot be undone.`}
+        confirmLabel="Delete Project"
+        isLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onClose={() => setProjectToDelete(null)}
+      />
     </aside>
   );
 };

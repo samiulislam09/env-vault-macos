@@ -40,11 +40,17 @@ export const api = {
     rootDirectory?: string;
   }) => invoke<ProjectRecord>("create_project_cmd", { input }),
   deleteProject: (projectId: string) =>
-    invoke<void>("delete_project_cmd", { projectId }),
+    invoke<void>("delete_project_cmd", {
+      projectId,
+      project_id: projectId,
+    }),
 
   // Environment commands
   listEnvironments: (projectId: string) =>
-    invoke<EnvironmentRecord[]>("list_environments_cmd", { projectId }),
+    invoke<EnvironmentRecord[]>("list_environments_cmd", {
+      projectId,
+      project_id: projectId,
+    }),
   createEnvironment: (input: {
     projectId: string;
     name: string;
@@ -59,13 +65,24 @@ export const api = {
       input: { sourceEnvId, name, isProduction },
     }),
   deleteEnvironment: (envId: string) =>
-    invoke<void>("delete_environment_cmd", { envId }),
+    invoke<void>("delete_environment_cmd", {
+      envId,
+      env_id: envId,
+    }),
 
   // Variable commands
   listVariables: (envId: string) =>
-    invoke<VariableSummary[]>("list_variables_cmd", { envId }),
+    invoke<VariableSummary[]>("list_variables_cmd", {
+      envId,
+      env_id: envId,
+    }),
   revealVariableValue: (envId: string, varId: string) =>
-    invoke<string>("reveal_variable_value_cmd", { envId, varId }),
+    invoke<string>("reveal_variable_value_cmd", {
+      envId,
+      env_id: envId,
+      varId,
+      var_id: varId,
+    }),
   createVariable: (input: {
     envId: string;
     key: string;
@@ -84,7 +101,12 @@ export const api = {
     tags: string[];
   }) => invoke<void>("update_variable_cmd", { input }),
   deleteVariable: (envId: string, varId: string) =>
-    invoke<void>("delete_variable_cmd", { envId, varId }),
+    invoke<void>("delete_variable_cmd", {
+      envId,
+      env_id: envId,
+      varId,
+      var_id: varId,
+    }),
   compareEnvironments: (envAId: string, envBId: string) =>
     invoke<ComparisonResult>("compare_environments_cmd", {
       envAId,
