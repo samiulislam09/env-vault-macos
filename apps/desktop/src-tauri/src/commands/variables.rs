@@ -15,6 +15,7 @@ pub struct VariableSummary {
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub has_value: bool,
+    pub expires_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -46,6 +47,7 @@ pub async fn list_variables_cmd(
                 description: v.description.clone(),
                 tags: v.tags.clone(),
                 has_value: !v.value.is_empty(),
+                expires_at: v.expires_at,
                 created_at: v.created_at,
                 updated_at: v.updated_at,
             })
@@ -95,6 +97,8 @@ pub struct CreateVarInput {
     pub var_type: VarType,
     pub description: Option<String>,
     pub tags: Vec<String>,
+    #[serde(alias = "expires_at", default)]
+    pub expires_at: Option<i64>,
 }
 
 #[tauri::command]
@@ -105,7 +109,7 @@ pub async fn create_variable_cmd(
     validate_variable_key(&input.key).map_err(|e| e.to_string())?;
     let eid = EnvId::parse(&input.env_id).map_err(|e| e.to_string())?;
 
-    state.with_unlocked(|vault| {
+    let res = state.with_unlocked(|vault| {
         let entry = vault
             .manifest
             .environments
@@ -120,13 +124,14 @@ pub async fn create_variable_cmd(
             return Err(LvError::DuplicateKey(input.key.clone()));
         }
 
-        let new_var = Variable::new(
+        let mut new_var = Variable::new(
             input.key,
             input.value,
             input.var_type,
             input.description,
             input.tags,
         );
+        new_var.expires_at = input.expires_at;
 
         let summary = VariableSummary {
             id: new_var.id.to_string_repr(),
@@ -135,15 +140,34 @@ pub async fn create_variable_cmd(
             description: new_var.description.clone(),
             tags: new_var.tags.clone(),
             has_value: !new_var.value.is_empty(),
+            expires_at: new_var.expires_at,
             created_at: new_var.created_at,
             updated_at: new_var.updated_at,
         };
+
+        let author = super::auth::get_active_session()
+            .map(|s| s.email)
+            .unwrap_or_else(|| "Local User".to_string());
+
+        super::revisions::record_variable_revision(
+            vault,
+            &input.env_id,
+            &new_var.id.to_string_repr(),
+            &new_var.key,
+            "create",
+            None,
+            Some(&new_var.value),
+            &author,
+        );
 
         env.variables.push(new_var);
         env.save(&entry.record_id, &vault.vek, &vault.paths)?;
 
         Ok(summary)
-    }).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
+    Ok(res)
 }
 
 #[derive(Debug, Deserialize)]
@@ -159,6 +183,8 @@ pub struct UpdateVarInput {
     pub var_type: VarType,
     pub description: Option<String>,
     pub tags: Vec<String>,
+    #[serde(alias = "expires_at", default)]
+    pub expires_at: Option<i64>,
 }
 
 #[tauri::command]
@@ -170,7 +196,7 @@ pub async fn update_variable_cmd(
     let eid = EnvId::parse(&input.env_id).map_err(|e| e.to_string())?;
     let vid = VarId::parse(&input.var_id).map_err(|e| e.to_string())?;
 
-    state.with_unlocked(|vault| {
+    let _res = state.with_unlocked(|vault| {
         let entry = vault
             .manifest
             .environments
@@ -186,6 +212,7 @@ pub async fn update_variable_cmd(
             .find(|v| v.id == vid)
             .ok_or_else(|| LvError::VariableNotFound(input.var_id.clone()))?;
 
+        let old_val = var.value.clone();
         var.key = input.key;
         if let Some(new_val) = input.value {
             var.value = new_val;
@@ -193,11 +220,30 @@ pub async fn update_variable_cmd(
         var.var_type = input.var_type;
         var.description = input.description;
         var.tags = input.tags;
+        var.expires_at = input.expires_at;
         var.updated_at = localvault_core::now_timestamp();
+
+        let author = super::auth::get_active_session()
+            .map(|s| s.email)
+            .unwrap_or_else(|| "Local User".to_string());
+
+        super::revisions::record_variable_revision(
+            vault,
+            &input.env_id,
+            &var.id.to_string_repr(),
+            &var.key,
+            "update",
+            Some(&old_val),
+            Some(&var.value),
+            &author,
+        );
 
         env.save(&entry.record_id, &vault.vek, &vault.paths)?;
         Ok(())
-    }).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
+    Ok(())
 }
 
 #[tauri::command]
@@ -209,7 +255,7 @@ pub async fn delete_variable_cmd(
     let eid = EnvId::parse(&env_id).map_err(|e| e.to_string())?;
     let vid = VarId::parse(&var_id).map_err(|e| e.to_string())?;
 
-    state.with_unlocked(|vault| {
+    let _res = state.with_unlocked(|vault| {
         let entry = vault
             .manifest
             .environments
@@ -218,11 +264,32 @@ pub async fn delete_variable_cmd(
             .ok_or_else(|| LvError::EnvironmentNotFound(env_id.clone()))?;
 
         let mut env = EnvironmentRecord::load(&entry.record_id, &vault.vek, &vault.paths)?;
-        env.variables.retain(|v| v.id != vid);
+
+        if let Some(pos) = env.variables.iter().position(|v| v.id == vid) {
+            let removed = env.variables.remove(pos);
+            let author = super::auth::get_active_session()
+                .map(|s| s.email)
+                .unwrap_or_else(|| "Local User".to_string());
+
+            super::revisions::record_variable_revision(
+                vault,
+                &env_id,
+                &removed.id.to_string_repr(),
+                &removed.key,
+                "delete",
+                Some(&removed.value),
+                None,
+                &author,
+            );
+        }
+
         env.save(&entry.record_id, &vault.vek, &vault.paths)?;
 
         Ok(())
-    }).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
+    Ok(())
 }
 
 #[tauri::command]

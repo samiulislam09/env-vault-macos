@@ -9,6 +9,21 @@ import type {
   VaultCreated,
   VaultStatusResponse,
   WorkspaceRecord,
+  TursoConfig,
+  TursoTestResponse,
+  TursoSyncResult,
+  TursoRemoteStatus,
+  UserSession,
+  UserAccountSummary,
+  AuthResponse,
+  AuthStatusResponse,
+  BiometricStatus,
+  VariableRevision,
+  SharedProjectSummary,
+  BreachResult,
+  KeyBreachResult,
+  MergeDiffReport,
+  MergeResultSummary,
 } from "./types";
 
 export const api = {
@@ -95,6 +110,7 @@ export const api = {
     varType: string;
     description?: string;
     tags: string[];
+    expiresAt?: number | null;
   }) => invoke<VariableSummary>("create_variable_cmd", { input }),
   updateVariable: (input: {
     envId: string;
@@ -104,6 +120,7 @@ export const api = {
     varType: string;
     description?: string;
     tags: string[];
+    expiresAt?: number | null;
   }) => invoke<void>("update_variable_cmd", { input }),
   deleteVariable: (envId: string, varId: string) =>
     invoke<void>("delete_variable_cmd", {
@@ -181,4 +198,79 @@ export const api = {
     ),
   restoreBackup: (backupPath: string, passphrase: string) =>
     invoke<number>("restore_backup_cmd", { backupPath, passphrase }),
+
+  // Turso Cloud Sync
+  getTursoConfig: () => invoke<TursoConfig>("turso_get_config_cmd"),
+  saveTursoConfig: (config: TursoConfig) =>
+    invoke<void>("turso_save_config_cmd", { config }),
+  testTursoConnection: (url?: string, token?: string) =>
+    invoke<TursoTestResponse>("turso_test_connection_cmd", { url, token }),
+  getTursoRemoteStatus: () =>
+    invoke<TursoRemoteStatus>("turso_remote_status_cmd"),
+  tursoSyncPush: () => invoke<TursoSyncResult>("turso_sync_push_cmd"),
+  tursoSyncPull: () => invoke<TursoSyncResult>("turso_sync_pull_cmd"),
+
+  // User Authentication & Multi-Tenant Isolation
+  getAuthStatus: () => invoke<AuthStatusResponse>("auth_get_status_cmd"),
+  register: (email: string, password: string) =>
+    invoke<AuthResponse>("auth_register_cmd", { email, password }),
+  login: (email: string, password: string) =>
+    invoke<AuthResponse>("auth_login_cmd", { email, password }),
+  logout: () => invoke<void>("auth_logout_cmd"),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    invoke<string>("auth_change_password_cmd", { oldPassword, newPassword }),
+
+  // Biometric / Touch ID
+  getBiometricStatus: (userId?: string) =>
+    invoke<BiometricStatus>("biometric_get_status_cmd", { userId }),
+  enableBiometric: (userId: string, password: string) =>
+    invoke<boolean>("biometric_enable_cmd", { userId, password }),
+  disableBiometric: (userId: string) =>
+    invoke<boolean>("biometric_disable_cmd", { userId }),
+  biometricUnlock: (email: string, userId: string) =>
+    invoke<AuthResponse>("biometric_unlock_cmd", { email, userId }),
+
+  // Variable Revision History & Rollbacks
+  listVariableRevisions: (envId?: string) =>
+    invoke<VariableRevision[]>("list_variable_revisions_cmd", { envId }),
+  rollbackVariable: (revisionId: string) =>
+    invoke<string>("rollback_variable_cmd", { revisionId }),
+
+  // End-to-End Encrypted Project Sharing
+  publishSharingIdentity: () =>
+    invoke<string>("sharing_publish_identity_cmd"),
+  shareProject: (recipientEmail: string, projectId: string) =>
+    invoke<string>("sharing_share_project_cmd", { recipientEmail, projectId }),
+  listReceivedShares: () =>
+    invoke<SharedProjectSummary[]>("sharing_list_received_shares_cmd"),
+  acceptShare: (shareId: string) =>
+    invoke<string>("sharing_accept_share_cmd", { shareId }),
+
+  // Zero-Knowledge Breach & Compromise Checker (HaveIBeenPwned k-Anonymity)
+  checkSecretCompromise: (secret: string) =>
+    invoke<BreachResult>("check_secret_compromise_cmd", { secret }),
+  scanEnvironmentBreaches: (envId: string) =>
+    invoke<KeyBreachResult[]>("scan_environment_breaches_cmd", {
+      envId,
+      env_id: envId,
+    }),
+
+  // Environment Branching & Merging
+  branchEnvironment: (sourceEnvId: string, branchName: string) =>
+    invoke<EnvironmentRecord>("branch_environment_cmd", {
+      input: { sourceEnvId, branchName },
+    }),
+  getMergeDiff: (sourceEnvId: string, targetEnvId: string) =>
+    invoke<MergeDiffReport>("get_merge_diff_cmd", {
+      sourceEnvId,
+      targetEnvId,
+    }),
+  mergeEnvironments: (
+    sourceEnvId: string,
+    targetEnvId: string,
+    selectedKeys: string[]
+  ) =>
+    invoke<MergeResultSummary>("merge_environments_cmd", {
+      input: { sourceEnvId, targetEnvId, selectedKeys },
+    }),
 };

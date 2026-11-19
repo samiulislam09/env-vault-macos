@@ -5,7 +5,7 @@ use localvault_environments::{
 use localvault_projects::ProjectRecord;
 use localvault_storage::atomic_write;
 use localvault_vault::{EnvironmentEntry, VaultState};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tauri::State;
 
 #[tauri::command]
@@ -53,7 +53,7 @@ pub async fn create_environment_cmd(
 ) -> Result<EnvironmentRecord, String> {
     let proj_id = ProjectId::parse(&input.project_id).map_err(|e| e.to_string())?;
 
-    state.with_unlocked_mut(|vault| {
+    let res = state.with_unlocked_mut(|vault| {
         let env_id = EnvId::new();
         let record_id = RecordId::new();
 
@@ -100,7 +100,10 @@ pub async fn create_environment_cmd(
         atomic_write(&vault.paths.manifest_file(), &manifest_bytes)?;
 
         Ok(env)
-    }).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
+    Ok(res)
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,7 +123,7 @@ pub async fn update_environment_cmd(
 ) -> Result<EnvironmentRecord, String> {
     let eid = EnvId::parse(&input.env_id).map_err(|e| e.to_string())?;
 
-    state.with_unlocked_mut(|vault| {
+    let res = state.with_unlocked_mut(|vault| {
         let entry = vault
             .manifest
             .environments
@@ -136,7 +139,10 @@ pub async fn update_environment_cmd(
 
         env.save(&entry.record_id, &vault.vek, &vault.paths)?;
         Ok(env)
-    }).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
+    Ok(res)
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,7 +162,7 @@ pub async fn duplicate_environment_cmd(
 ) -> Result<EnvironmentRecord, String> {
     let src_id = EnvId::parse(&input.source_env_id).map_err(|e| e.to_string())?;
 
-    state.with_unlocked_mut(|vault| {
+    let res = state.with_unlocked_mut(|vault| {
         let entry = vault
             .manifest
             .environments
@@ -197,7 +203,10 @@ pub async fn duplicate_environment_cmd(
         atomic_write(&vault.paths.manifest_file(), &manifest_bytes)?;
 
         Ok(new_env)
-    }).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
+    Ok(res)
 }
 
 #[tauri::command]
@@ -238,5 +247,8 @@ pub async fn delete_environment_cmd(
         atomic_write(&vault.paths.manifest_file(), &manifest_bytes)?;
 
         Ok(())
-    }).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
+    Ok(())
 }

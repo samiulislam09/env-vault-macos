@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useVaultStore } from "../stores/vault-store";
 import { api } from "../lib/tauri";
+import { secureCopy } from "../lib/clipboard";
 import {
   Plus,
   Eye,
@@ -20,6 +21,14 @@ import {
   Share2,
   ChevronDown,
   ChevronRight,
+  FileCode,
+  History,
+  GitBranch,
+  GitMerge,
+  Clock,
+  Lock,
+  ShieldCheck,
+  UserCheck,
 } from "lucide-react";
 import { EditVariableModal } from "./EditVariableModal";
 import { SecurityAuditModal } from "./SecurityAuditModal";
@@ -27,7 +36,12 @@ import { QuickExportModal } from "./QuickExportModal";
 import { DuplicateEnvironmentModal } from "./DuplicateEnvironmentModal";
 import { ConfirmModal } from "./ConfirmModal";
 import { EditEnvironmentModal } from "./EditEnvironmentModal";
-import type { VariableSummary, VarType } from "../lib/types";
+import { RevisionHistoryModal } from "./RevisionHistoryModal";
+import { ShareProjectModal } from "./ShareProjectModal";
+import { BranchEnvironmentModal } from "./BranchEnvironmentModal";
+import { MergeEnvironmentModal } from "./MergeEnvironmentModal";
+import { BreachScannerModal } from "./BreachScannerModal";
+import type { VariableSummary, VarType, VaultRole } from "../lib/types";
 
 interface ProjectDetailViewProps {
   onNewEnvironment: () => void;
@@ -49,14 +63,19 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const refreshEnvironments = useVaultStore((s) => s.refreshEnvironments);
   const variables = useVaultStore((s) => s.variables);
   const refreshVariables = useVaultStore((s) => s.refreshVariables);
+  const clipboardTimeoutSeconds = useVaultStore((s) => s.clipboardTimeoutSeconds);
+  const activeRole = useVaultStore((s) => s.activeRole);
+  const setActiveRole = useVaultStore((s) => s.setActiveRole);
 
   // Variable reveal states (ephemeral in React state, cleared immediately on navigation)
   const [revealedValues, setRevealedValues] = useState<Record<string, string>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [copiedExample, setCopiedExample] = useState(false);
 
-  // Search & Type Filter
+  // Search & Type Filter & Expiration Filter
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [showOnlyExpiring, setShowOnlyExpiring] = useState(false);
 
   // Sub-Modals
   const [editingVar, setEditingVar] = useState<VariableSummary | null>(null);
@@ -64,6 +83,11 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isDuplicateEnvOpen, setIsDuplicateEnvOpen] = useState(false);
   const [isEditEnvOpen, setIsEditEnvOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [isBreachModalOpen, setIsBreachModalOpen] = useState(false);
   const [groupByType, setGroupByType] = useState(false);
   const [collapsedTypes, setCollapsedTypes] = useState<Record<string, boolean>>({});
 
@@ -74,6 +98,8 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   const [varValue, setVarValue] = useState("");
   const [varType, setVarType] = useState<VarType>("secret");
   const [varDescription, setVarDescription] = useState("");
+  const [varExpirationPreset, setVarExpirationPreset] = useState("never");
+  const [varCustomDate, setVarCustomDate] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
   // Bulk .env import
@@ -127,6 +153,18 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     });
   };
 
+  const now = Math.floor(Date.now() / 1000);
+  const canEdit =
+    activeRole === "admin" || (activeRole === "editor" && !activeEnv?.is_production);
+  const canReveal =
+    activeRole === "admin" || (activeRole === "editor" && !activeEnv?.is_production);
+  const canDelete = activeRole === "admin";
+
+  const expiredVars = variables.filter((v) => v.expires_at && v.expires_at < now);
+  const expiringSoonVars = variables.filter(
+    (v) => v.expires_at && v.expires_at >= now && v.expires_at - now <= 7 * 86400
+  );
+
   const filteredVariables = variables.filter((v) => {
     const matchesSearch =
       v.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -135,11 +173,20 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
     const matchesType = typeFilter === "all" || v.var_type === typeFilter;
 
-    return matchesSearch && matchesType;
+    const matchesExpiring =
+      !showOnlyExpiring ||
+      (v.expires_at && (v.expires_at < now || v.expires_at - now <= 7 * 86400));
+
+    return matchesSearch && matchesType && matchesExpiring;
   });
 
   const handleToggleReveal = async (varId: string) => {
     if (!activeEnvironmentId) return;
+
+    if (!canReveal) {
+      alert("Viewing/revealing secrets in production is restricted to Vault Admins.");
+      return;
+    }
 
     if (revealedValues[varId]) {
       const next = { ...revealedValues };
@@ -157,17 +204,71 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
   const handleCopyValue = async (varId: string, fallbackValue?: string) => {
     if (!activeEnvironmentId) return;
+
+    if (!canReveal) {
+      alert("Copying secret values in production is restricted to Vault Admins.");
+      return;
+    }
+
     try {
       let textToCopy = revealedValues[varId] || fallbackValue;
       if (!textToCopy) {
         textToCopy = await api.revealVariableValue(activeEnvironmentId, varId);
       }
-      await navigator.clipboard.writeText(textToCopy);
+      await secureCopy(textToCopy, clipboardTimeoutSeconds);
       setCopiedKey(varId);
       setTimeout(() => setCopiedKey(null), 2000);
     } catch (e) {
       console.error("Failed to copy:", e);
     }
+  };
+
+  const handleGenerateEnvExample = async () => {
+    if (variables.length === 0) return;
+    const lines = variables.map((v) => {
+      let placeholder = '""';
+      const lowerKey = v.key.toLowerCase();
+      if (lowerKey.includes("url") || lowerKey.includes("endpoint") || lowerKey.includes("host")) {
+        placeholder = '"https://example.com"';
+      } else if (lowerKey.includes("port")) {
+        placeholder = '"3000"';
+      } else if (
+        lowerKey.includes("key") ||
+        lowerKey.includes("token") ||
+        lowerKey.includes("secret") ||
+        lowerKey.includes("pass")
+      ) {
+        placeholder = `"your_${lowerKey}_here"`;
+      } else if (lowerKey.includes("email")) {
+        placeholder = '"user@example.com"';
+      } else if (lowerKey.includes("db") || lowerKey.includes("database")) {
+        placeholder = '"postgres://user:pass@localhost:5432/dbname"';
+      }
+      const desc = v.description ? `# ${v.description}\n` : "";
+      return `${desc}${v.key}=${placeholder}`;
+    });
+
+    const exampleContent =
+      `# Generated by LocalVault (Sanitized .env.example template)\n# Safe to commit to Git version control\n# Project: ${activeProject?.name || "Vault"} | Env: ${activeEnv?.name || ""}\n\n` +
+      lines.join("\n\n") +
+      "\n";
+
+    await navigator.clipboard.writeText(exampleContent);
+    setCopiedExample(true);
+    setTimeout(() => setCopiedExample(false), 2500);
+  };
+
+  const calculateNewVarExpiresAt = (): number | null => {
+    const curTime = Math.floor(Date.now() / 1000);
+    if (varExpirationPreset === "7d") return curTime + 7 * 86400;
+    if (varExpirationPreset === "30d") return curTime + 30 * 86400;
+    if (varExpirationPreset === "90d") return curTime + 90 * 86400;
+    if (varExpirationPreset === "1y") return curTime + 365 * 86400;
+    if (varExpirationPreset === "custom" && varCustomDate) {
+      const parsed = Math.floor(new Date(varCustomDate).getTime() / 1000);
+      return isNaN(parsed) ? null : parsed;
+    }
+    return null;
   };
 
   const handleCreateVariable = async (e: React.FormEvent) => {
@@ -176,6 +277,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     setFormError(null);
 
     try {
+      const expiresAt = calculateNewVarExpiresAt();
       await api.createVariable({
         envId: activeEnvironmentId,
         key: varKey.trim(),
@@ -183,12 +285,15 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
         varType,
         description: varDescription.trim() || undefined,
         tags: [],
+        expiresAt,
       });
 
       setIsAddingVar(false);
       setVarKey("");
       setVarValue("");
       setVarDescription("");
+      setVarExpirationPreset("never");
+      setVarCustomDate("");
       await refreshVariables(activeEnvironmentId);
     } catch (err: any) {
       setFormError(err.toString());
@@ -254,13 +359,39 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
     const isRevealed = !!revealedValues[v.id];
     const displayedVal = isRevealed ? revealedValues[v.id] : "••••••••••••";
 
+    const isExpired = v.expires_at ? v.expires_at < now : false;
+    const isExpiringSoon = v.expires_at ? !isExpired && v.expires_at - now <= 7 * 86400 : false;
+    const daysLeft = v.expires_at ? Math.max(0, Math.ceil((v.expires_at - now) / 86400)) : null;
+    const daysAgo = v.expires_at ? Math.max(0, Math.floor((now - v.expires_at) / 86400)) : null;
+
     return (
       <tr
         key={v.id}
-        className="hover:bg-zinc-800/20 transition group"
+        className={`hover:bg-zinc-800/20 transition group ${
+          isExpired ? "bg-rose-950/10" : isExpiringSoon ? "bg-amber-950/10" : ""
+        }`}
       >
         <td className="py-3 px-4 font-mono font-medium text-white">
-          {v.key}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span>{v.key}</span>
+            {isExpired && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1 shrink-0">
+                <Clock className="w-2.5 h-2.5" />
+                <span>Expired {daysAgo === 0 ? "today" : `${daysAgo}d ago`}</span>
+              </span>
+            )}
+            {isExpiringSoon && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1 shrink-0">
+                <Clock className="w-2.5 h-2.5" />
+                <span>Expires in {daysLeft}d</span>
+              </span>
+            )}
+            {!isExpired && !isExpiringSoon && v.expires_at && (
+              <span className="text-[10px] text-zinc-500 font-sans shrink-0">
+                (exp: {new Date(v.expires_at * 1000).toLocaleDateString()})
+              </span>
+            )}
+          </div>
         </td>
         <td className="py-3 px-4 font-mono text-zinc-300">
           <span className={isRevealed ? "text-indigo-300" : "text-zinc-500"}>
@@ -279,11 +410,24 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           <div className="flex items-center justify-end gap-1">
             <button
               type="button"
+              disabled={!canReveal}
               onClick={() => handleToggleReveal(v.id)}
-              className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition cursor-pointer"
-              title={isRevealed ? "Hide Value" : "Reveal Value"}
+              className={`p-1.5 rounded transition ${
+                !canReveal
+                  ? "text-zinc-600 cursor-not-allowed"
+                  : "hover:bg-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
+              }`}
+              title={
+                !canReveal
+                  ? "Production secrets can only be revealed by Vault Admins"
+                  : isRevealed
+                  ? "Hide Value"
+                  : "Reveal Value"
+              }
             >
-              {isRevealed ? (
+              {!canReveal ? (
+                <Lock className="w-3.5 h-3.5 text-zinc-600" />
+              ) : isRevealed ? (
                 <EyeOff className="w-3.5 h-3.5 text-indigo-400" />
               ) : (
                 <Eye className="w-3.5 h-3.5" />
@@ -292,9 +436,18 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
             <button
               type="button"
+              disabled={!canReveal}
               onClick={() => handleCopyValue(v.id)}
-              className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition cursor-pointer"
-              title="Copy Value"
+              className={`p-1.5 rounded transition ${
+                !canReveal
+                  ? "text-zinc-600 cursor-not-allowed"
+                  : "hover:bg-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
+              }`}
+              title={
+                !canReveal
+                  ? "Copying production secrets is restricted to Vault Admins"
+                  : "Copy Value"
+              }
             >
               {copiedKey === v.id ? (
                 <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -305,18 +458,28 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
             <button
               type="button"
+              disabled={!canEdit}
               onClick={() => setEditingVar(v)}
-              className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded transition cursor-pointer"
-              title="Edit Variable"
+              className={`p-1.5 rounded transition ${
+                !canEdit
+                  ? "text-zinc-600 cursor-not-allowed"
+                  : "hover:bg-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
+              }`}
+              title={!canEdit ? "Editing restricted" : "Edit Variable"}
             >
               <Edit2 className="w-3.5 h-3.5" />
             </button>
 
             <button
               type="button"
+              disabled={!canDelete}
               onClick={() => handleDeleteVariable(v.id, v.key)}
-              className="p-1.5 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-400 rounded transition cursor-pointer"
-              title="Delete Variable"
+              className={`p-1.5 rounded transition ${
+                !canDelete
+                  ? "text-zinc-600 cursor-not-allowed"
+                  : "hover:bg-rose-950/40 text-zinc-400 hover:text-rose-400 cursor-pointer"
+              }`}
+              title={!canDelete ? "Deleting restricted to Admin" : "Delete Variable"}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -335,20 +498,56 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
   }
 
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-hidden">
+    <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
       {/* Project Header */}
-      <div className="h-14 px-6 border-b border-[#1e1e22] flex items-center justify-between shrink-0 bg-[#0d0d0f]">
-        <div className="flex items-center gap-3">
-          <FolderGit2 className="w-5 h-5 text-indigo-400" />
-          <h1 className="font-semibold text-white text-sm">{activeProject.name}</h1>
+      <div className="h-14 px-4 sm:px-6 border-b border-[#1e1e22] flex items-center justify-between gap-3 shrink-0 bg-[#0d0d0f] min-w-0">
+        <div className="flex items-center gap-3 shrink-0">
+          <FolderGit2 className="w-5 h-5 text-indigo-400 shrink-0" />
+          <h1 className="font-semibold text-white text-sm truncate max-w-[180px] sm:max-w-xs">{activeProject.name}</h1>
           {activeProject.description && (
-            <span className="text-xs text-zinc-500 max-w-sm truncate">
+            <span className="text-xs text-zinc-500 max-w-xs truncate hidden lg:inline">
               — {activeProject.description}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 min-w-0">
+          {/* RBAC Role Selector */}
+          <div className="flex items-center bg-zinc-900 border border-zinc-700/70 rounded-lg p-0.5 text-xs mr-1">
+            <span className="text-[10px] uppercase font-bold text-zinc-500 px-1.5 flex items-center gap-1">
+              <UserCheck className="w-3 h-3 text-indigo-400" />
+              <span>Role:</span>
+            </span>
+            {(["admin", "editor", "viewer"] as VaultRole[]).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setActiveRole(r)}
+                className={`px-2 py-0.5 rounded capitalize text-[11px] font-medium transition ${
+                  activeRole === r
+                    ? r === "admin"
+                      ? "bg-indigo-600 text-white font-semibold shadow-xs"
+                      : r === "editor"
+                      ? "bg-amber-600 text-white font-semibold shadow-xs"
+                      : "bg-zinc-700 text-zinc-200 font-semibold shadow-xs"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsBreachModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 rounded-lg text-xs font-medium transition"
+            title="Zero-knowledge password breach audit (HaveIBeenPwned k-Anonymity)"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+            <span>Breach Scan</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setIsAuditOpen(true)}
@@ -372,7 +571,12 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           <button
             type="button"
             onClick={onImport}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-medium transition"
+            disabled={!canEdit}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+              !canEdit
+                ? "bg-zinc-800/40 text-zinc-600 cursor-not-allowed"
+                : "bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300"
+            }`}
           >
             <FileDown className="w-3.5 h-3.5" />
             <span>Import</span>
@@ -389,12 +593,48 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
           <button
             type="button"
+            onClick={handleGenerateEnvExample}
+            disabled={variables.length === 0}
+            title="Generate a sanitized .env.example with placeholders that is safe to commit to Git"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-medium transition disabled:opacity-40"
+          >
+            {copiedExample ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <FileCode className="w-3.5 h-3.5 text-emerald-400" />}
+            <span>{copiedExample ? "Copied .env.example!" : "Gen .env.example"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsHistoryOpen(true)}
+            title="View audit log and rollback variable revisions"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 rounded-lg text-xs font-medium transition cursor-pointer"
+          >
+            <History className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Audit Log</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsShareModalOpen(true)}
+            title="End-to-End Encrypted Project Sharing"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 rounded-lg text-xs font-medium transition cursor-pointer"
+          >
+            <Share2 className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Share Project</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={!canEdit}
             onClick={() => {
               setAddVarMode("bulk");
               setFormError(null);
               setIsAddingVar(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-lg text-xs font-medium transition"
+            className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition ${
+              !canEdit
+                ? "bg-zinc-800/40 text-zinc-600 border-zinc-800 cursor-not-allowed"
+                : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700"
+            }`}
           >
             <ClipboardPaste className="w-3.5 h-3.5 text-indigo-400" />
             <span>Paste .env</span>
@@ -402,12 +642,17 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
           <button
             type="button"
+            disabled={!canEdit}
             onClick={() => {
               setAddVarMode("single");
               setFormError(null);
               setIsAddingVar(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition shadow-md shadow-indigo-600/20"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-md ${
+              !canEdit
+                ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/20"
+            }`}
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Single</span>
@@ -415,9 +660,14 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
           <button
             type="button"
+            disabled={!canDelete}
             onClick={handleDeleteCurrentProject}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 rounded-lg text-xs font-medium transition"
-            title="Permanently delete this project"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 border rounded-lg text-xs font-medium transition ${
+              !canDelete
+                ? "bg-zinc-800/40 text-zinc-600 border-zinc-800 cursor-not-allowed"
+                : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/20"
+            }`}
+            title={!canDelete ? "Delete Project requires Admin role" : "Permanently delete this project"}
           >
             <Trash2 className="w-3.5 h-3.5 text-rose-400" />
             <span>Delete Project</span>
@@ -458,6 +708,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
           <button
             type="button"
+            disabled={!canEdit}
             onClick={onNewEnvironment}
             className="flex items-center gap-1 px-2.5 py-1 text-zinc-500 hover:text-indigo-400 hover:bg-zinc-800/40 rounded-md text-xs transition shrink-0"
             title="Create Environment"
@@ -469,9 +720,30 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
         {/* Environment Quick Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsBranchModalOpen(true)}
+            className="flex items-center gap-1.5 text-emerald-400 hover:bg-emerald-950/30 px-2.5 py-1 rounded-md text-xs transition border border-emerald-500/30 cursor-pointer"
+            title="Branch this environment into an isolated copy"
+          >
+            <GitBranch className="w-3.5 h-3.5" />
+            <span>Branch</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsMergeModalOpen(true)}
+            className="flex items-center gap-1.5 text-indigo-400 hover:bg-indigo-950/30 px-2.5 py-1 rounded-md text-xs transition border border-indigo-500/30 cursor-pointer"
+            title="Merge variables between environments"
+          >
+            <GitMerge className="w-3.5 h-3.5" />
+            <span>Merge</span>
+          </button>
+
           {activeEnv && (
             <button
               type="button"
+              disabled={!canEdit}
               onClick={() => setIsEditEnvOpen(true)}
               className="flex items-center gap-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800/60 px-2.5 py-1 rounded-md text-xs transition border border-transparent hover:border-zinc-700 cursor-pointer"
               title="Rename or Edit Environment"
@@ -480,6 +752,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
               <span>Edit Env</span>
             </button>
           )}
+
           <button
             type="button"
             onClick={() => setIsDuplicateEnvOpen(true)}
@@ -487,13 +760,19 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
             title="Duplicate / Clone this Environment"
           >
             <Copy className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Clone Env</span>
+            <span>Clone</span>
           </button>
+
           {environments.length > 1 && (
             <button
               type="button"
+              disabled={!canDelete}
               onClick={handleDeleteEnvironment}
-              className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/30 rounded transition"
+              className={`p-1 rounded transition ${
+                !canDelete
+                  ? "text-zinc-700 cursor-not-allowed"
+                  : "text-zinc-500 hover:text-rose-400 hover:bg-rose-950/30 cursor-pointer"
+              }`}
               title="Delete this Environment"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -504,11 +783,52 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
 
       {/* Production Warning Banner */}
       {activeEnv?.is_production && (
-        <div className="px-6 py-2 bg-rose-950/30 border-b border-rose-900/30 flex items-center gap-2 text-rose-300 text-xs shrink-0">
-          <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-          <span>
-            <strong>Production Environment:</strong> Changes are sensitive and directly affect live deployment secrets.
+        <div className="px-6 py-2 bg-rose-950/30 border-b border-rose-900/30 flex items-center justify-between text-rose-300 text-xs shrink-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+            <span>
+              <strong>Production Environment:</strong> Live deployment secrets. Revealing or modifying variables requires Vault Admin privileges.
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-rose-400 bg-rose-950/60 px-2 py-0.5 rounded border border-rose-800/40">
+            Protected Mode
           </span>
+        </div>
+      )}
+
+      {/* Secret Rotation Watchdog Banner */}
+      {(expiredVars.length > 0 || expiringSoonVars.length > 0) && (
+        <div className="mx-6 mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-between text-xs text-amber-300 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
+              <Clock className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-semibold text-white">Secret Rotation Watchdog: </span>
+              {expiredVars.length > 0 && (
+                <span className="text-rose-400 font-medium">
+                  {expiredVars.length} secret(s) have expired!{" "}
+                </span>
+              )}
+              {expiringSoonVars.length > 0 && (
+                <span className="text-amber-300">
+                  {expiringSoonVars.length} secret(s) require rotation within 7 days.
+                </span>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowOnlyExpiring(!showOnlyExpiring)}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition cursor-pointer ${
+              showOnlyExpiring
+                ? "bg-amber-400 text-black font-semibold shadow-xs"
+                : "bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30"
+            }`}
+          >
+            {showOnlyExpiring ? "Show All Secrets" : "Filter Expiring Only"}
+          </button>
         </div>
       )}
 
@@ -759,6 +1079,37 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                   </div>
                 </div>
 
+                {/* Expiration Watchdog Picker */}
+                <div>
+                  <label className="block text-xs font-medium text-zinc-300 mb-1 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Rotation & Expiration Date</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={varExpirationPreset}
+                      onChange={(e) => setVarExpirationPreset(e.target.value)}
+                      className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition"
+                    >
+                      <option value="never">Never Expires</option>
+                      <option value="7d">Expire in 7 Days</option>
+                      <option value="30d">Expire in 30 Days</option>
+                      <option value="90d">Expire in 90 Days</option>
+                      <option value="1y">Expire in 1 Year</option>
+                      <option value="custom">Custom Date</option>
+                    </select>
+
+                    {varExpirationPreset === "custom" && (
+                      <input
+                        type="date"
+                        value={varCustomDate}
+                        onChange={(e) => setVarCustomDate(e.target.value)}
+                        className="w-full bg-[#0a0a0b] border border-[#27272a] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 transition"
+                      />
+                    )}
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-end gap-2 pt-2">
                   <button
                     type="button"
@@ -902,6 +1253,43 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
           }
         }}
         onClose={() => setConfirmConfig((prev) => ({ ...prev, isOpen: false }))}
+      />
+      {/* Revision History & Rollbacks Modal */}
+      <RevisionHistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        envId={activeEnvironmentId || undefined}
+        envName={activeEnv?.name}
+      />
+
+      {/* End-to-End Encrypted Project Sharing Modal */}
+      <ShareProjectModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        projectId={activeProjectId || undefined}
+        projectName={activeProject?.name}
+      />
+
+      {/* Branch Environment Modal */}
+      <BranchEnvironmentModal
+        isOpen={isBranchModalOpen}
+        onClose={() => setIsBranchModalOpen(false)}
+      />
+
+      {/* Merge Environment Modal */}
+      <MergeEnvironmentModal
+        isOpen={isMergeModalOpen}
+        onClose={() => setIsMergeModalOpen(false)}
+      />
+
+      {/* Zero-Knowledge Breach & Compromise Scanner */}
+      <BreachScannerModal
+        isOpen={isBreachModalOpen}
+        onClose={() => setIsBreachModalOpen(false)}
+        onEditVariable={(key) => {
+          const found = variables.find((v) => v.key === key);
+          if (found) setEditingVar(found);
+        }}
       />
     </div>
   );

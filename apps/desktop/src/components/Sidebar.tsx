@@ -11,6 +11,8 @@ import {
   ChevronDown,
   ChevronRight,
   LayoutDashboard,
+  RefreshCw,
+  GripVertical,
 } from "lucide-react";
 import { ConfirmModal } from "./ConfirmModal";
 
@@ -36,10 +38,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const projectEnvironments = useVaultStore((s) => s.projectEnvironments);
   const deleteProject = useVaultStore((s) => s.deleteProject);
   const lockVault = useVaultStore((s) => s.lockVault);
+  const currentUser = useVaultStore((s) => s.currentUser);
+  const logout = useVaultStore((s) => s.logout);
+  const syncStatus = useVaultStore((s) => s.syncStatus);
+  const lastSyncTime = useVaultStore((s) => s.lastSyncTime);
+  const triggerSync = useVaultStore((s) => s.triggerSync);
+  const reorderProjects = useVaultStore((s) => s.reorderProjects);
 
   const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+  const [draggedProjectIndex, setDraggedProjectIndex] = useState<number | null>(null);
+  const [dragOverProjectIndex, setDragOverProjectIndex] = useState<number | null>(null);
 
   // Auto-expand active project on mount or when activeProjectId changes
   useEffect(() => {
@@ -98,7 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className="w-64 bg-[#0d0d0f] border-r border-[#1e1e22] flex flex-col h-screen select-none shrink-0">
+    <aside className="w-64 bg-[#0d0d0f] border-r border-[#1e1e22] flex flex-col h-full select-none shrink-0">
       {/* Brand header */}
       <div className="h-14 px-4 border-b border-[#1e1e22] flex items-center justify-between">
         <div className="flex items-center gap-2.5">
@@ -205,13 +215,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <div className="space-y-1">
-          {projects.map((proj) => {
+          {projects.map((proj, idx) => {
             const isSelected = activeProjectId === proj.id && activeView === "project";
             const isExpanded = !!expandedProjects[proj.id];
             const envs = projectEnvironments[proj.id] || [];
+            const isDragging = draggedProjectIndex === idx;
+            const isOver = dragOverProjectIndex === idx && draggedProjectIndex !== idx;
 
             return (
-              <div key={proj.id} className="space-y-0.5">
+              <div
+                key={proj.id}
+                draggable
+                onDragStart={(e) => {
+                  setDraggedProjectIndex(idx);
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", `${idx}`);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragOverProjectIndex !== idx) {
+                    setDragOverProjectIndex(idx);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (dragOverProjectIndex === idx) {
+                    setDragOverProjectIndex(null);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (draggedProjectIndex !== null && draggedProjectIndex !== idx) {
+                    reorderProjects(draggedProjectIndex, idx);
+                  }
+                  setDraggedProjectIndex(null);
+                  setDragOverProjectIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedProjectIndex(null);
+                  setDragOverProjectIndex(null);
+                }}
+                className={`space-y-0.5 rounded-md transition-all ${
+                  isDragging ? "opacity-30 scale-95" : ""
+                } ${
+                  isOver ? "border-t-2 border-indigo-500 pt-1 -mt-1 bg-indigo-500/5" : ""
+                }`}
+              >
                 <div
                   onClick={() => {
                     selectProject(proj.id);
@@ -225,7 +274,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       : "text-zinc-300 hover:bg-zinc-800/40 hover:text-white"
                   }`}
                 >
-                  <div className="flex items-center gap-1.5 truncate">
+                  <div className="flex items-center gap-1 truncate">
+                    <span
+                      title="Drag to reorder"
+                      className="p-0.5 text-zinc-600 opacity-40 group-hover:opacity-100 hover:text-zinc-400 cursor-grab active:cursor-grabbing shrink-0"
+                    >
+                      <GripVertical className="w-3 h-3" />
+                    </span>
                     <button
                       type="button"
                       onClick={(e) => toggleProjectExpand(proj.id, e)}
@@ -325,6 +380,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* User Account Session */}
+      {currentUser && (
+        <div className="px-3.5 py-2.5 border-t border-[#1e1e22] flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <div className="w-5 h-5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-bold text-[10px] shrink-0">
+              {currentUser.email.slice(0, 1).toUpperCase()}
+            </div>
+            <span className="font-mono text-zinc-300 text-[11px] truncate" title={currentUser.email}>
+              {currentUser.email}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="text-[10px] text-zinc-500 hover:text-rose-400 transition cursor-pointer shrink-0 ml-1 font-medium"
+            title="Log out and switch account"
+          >
+            Sign out
+          </button>
+        </div>
+      )}
+
+      {/* Cloud Sync Status */}
+      <div className="px-3.5 py-2 border-t border-[#1e1e22] flex items-center justify-between text-[11px]">
+        <div className="flex items-center gap-2">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              syncStatus === "syncing"
+                ? "bg-amber-400 animate-ping"
+                : syncStatus === "error"
+                ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]"
+                : "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.5)]"
+            }`}
+          />
+          <div className="flex flex-col">
+            <span className="text-zinc-300 font-medium leading-none">
+              {syncStatus === "syncing" ? "Syncing..." : syncStatus === "error" ? "Sync Issue" : "Turso Edge"}
+            </span>
+            <span className="text-[9px] text-zinc-500 mt-0.5">
+              {lastSyncTime ? `Synced ${Math.max(1, Math.round((Date.now() - lastSyncTime) / 60000))}m ago` : "Live Cloud Sync"}
+            </span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => triggerSync()}
+          disabled={syncStatus === "syncing"}
+          className="p-1 hover:bg-zinc-800 text-zinc-400 hover:text-cyan-400 rounded transition cursor-pointer disabled:opacity-40"
+          title="Force Sync Now (Push & Pull)"
+        >
+          <RefreshCw className={`w-3 h-3 ${syncStatus === "syncing" ? "animate-spin text-cyan-400" : ""}`} />
+        </button>
       </div>
 
       {/* Footer Lock Action */}

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useVaultStore } from "../stores/vault-store";
-import { Shield, Key, Copy, Check, AlertTriangle, ArrowRight } from "lucide-react";
+import { Shield, Key, Copy, Check, AlertTriangle, ArrowRight, Cloud } from "lucide-react";
+import { api } from "../lib/tauri";
 
 export const VaultSetup: React.FC = () => {
   const [password, setPassword] = useState("");
@@ -169,6 +170,34 @@ export const VaultSetup: React.FC = () => {
             <span>{loading ? "Deriving Argon2id Keys..." : "Initialize Vault"}</span>
           </button>
         </form>
+
+        {/* Restore from Turso option */}
+        <div className="mt-6 pt-5 border-t border-[#1e1e22] text-center">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                setLoading(true);
+                setError(null);
+                const res = await api.tursoSyncPull();
+                if (res.count > 0) {
+                  await useVaultStore.getState().checkStatus();
+                } else {
+                  setError("No encrypted vault files found in Turso database yet.");
+                }
+              } catch (e: any) {
+                setError("Failed to restore from Turso: " + e.toString());
+              } finally {
+                setLoading(false);
+              }
+            }}
+            disabled={loading}
+            className="text-xs text-cyan-400 hover:text-cyan-300 font-medium inline-flex items-center gap-1.5 transition cursor-pointer"
+          >
+            <Cloud className="w-3.5 h-3.5" />
+            <span>Restore existing vault from Turso Cloud</span>
+          </button>
+        </div>
       </div>
     </div>
   );

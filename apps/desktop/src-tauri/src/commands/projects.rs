@@ -2,7 +2,7 @@ use localvault_core::{LvError, ProjectId, RecordId, WorkspaceId};
 use localvault_projects::{ProjectRecord, WorkspaceRecord};
 use localvault_storage::atomic_write;
 use localvault_vault::{ProjectEntry, VaultState, WorkspaceEntry};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tauri::State;
 
 #[tauri::command]
@@ -26,7 +26,7 @@ pub async fn create_workspace_cmd(
     description: Option<String>,
     state: State<'_, VaultState>,
 ) -> Result<WorkspaceRecord, String> {
-    state.with_unlocked_mut(|vault| {
+    let record = state.with_unlocked_mut(|vault| {
         let ws_id = WorkspaceId::new();
         let record_id = RecordId::new();
         let record = WorkspaceRecord::new(ws_id, name, description);
@@ -44,7 +44,10 @@ pub async fn create_workspace_cmd(
         atomic_write(&vault.paths.manifest_file(), &manifest_bytes)?;
 
         Ok(record)
-    }).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
+    Ok(record)
 }
 
 #[tauri::command]
@@ -85,7 +88,7 @@ pub async fn create_project_cmd(
     input: CreateProjectInput,
     state: State<'_, VaultState>,
 ) -> Result<ProjectRecord, String> {
-    state.with_unlocked_mut(|vault| {
+    let project = state.with_unlocked_mut(|vault| {
         // Resolve or create default workspace if none specified
         let ws_id = match input.workspace_id {
             Some(id_str) => WorkspaceId::parse(&id_str)
@@ -138,7 +141,10 @@ pub async fn create_project_cmd(
         atomic_write(&vault.paths.manifest_file(), &manifest_bytes)?;
 
         Ok(project)
-    }).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
+    Ok(project)
 }
 
 #[tauri::command]
@@ -193,5 +199,8 @@ pub async fn delete_project_cmd(
         atomic_write(&vault.paths.manifest_file(), &manifest_bytes)?;
 
         Ok(())
-    }).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
+    Ok(())
 }

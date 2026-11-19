@@ -40,6 +40,7 @@ rmp-serde = "1"
 # Cryptography
 argon2 = "0.5"
 chacha20poly1305 = "0.10"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
 rand = "0.9"
 zeroize = { version = "1", features = ["derive"] }
 secrecy = "0.10"
@@ -56,6 +57,7 @@ tokio = { version = "1", features = ["full"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
+rpassword = "7"
 
 # Filesystem
 fs2 = "0.4"

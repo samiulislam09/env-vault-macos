@@ -74,7 +74,7 @@ pub async fn execute_import_cmd(
         }
     };
 
-    state.with_unlocked(|vault| {
+    let imported = state.with_unlocked(|vault| {
         let entry = vault
             .manifest
             .environments
@@ -112,7 +112,10 @@ pub async fn execute_import_cmd(
 
         env.save(&entry.record_id, &vault.vek, &vault.paths)?;
         Ok(imported_count)
-    }).map_err(|e| e.to_string())
+    }).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
+    Ok(imported)
 }
 
 fn resolve_filesystem_path(raw: &str) -> std::path::PathBuf {

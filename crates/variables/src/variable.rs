@@ -9,6 +9,8 @@ pub struct Variable {
     pub description: Option<String>,
     pub var_type: VarType,
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub expires_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -29,8 +31,14 @@ impl Variable {
             description,
             var_type,
             tags,
+            expires_at: None,
             created_at: now,
             updated_at: now,
         }
+    }
+
+    pub fn with_expiration(mut self, expires_at: Option<i64>) -> Self {
+        self.expires_at = expires_at;
+        self
     }
 }

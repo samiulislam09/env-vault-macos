@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useVaultStore } from "./stores/vault-store";
-import { VaultSetup } from "./components/VaultSetup";
-import { VaultUnlock } from "./components/VaultUnlock";
+import { VaultAuth } from "./components/VaultAuth";
 import { Sidebar } from "./components/Sidebar";
 import { DashboardView } from "./components/DashboardView";
 import { ProjectDetailView } from "./components/ProjectDetailView";
@@ -52,6 +51,32 @@ export const App: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [lockVault]);
 
+  const autoLockMinutes = useVaultStore((s) => s.autoLockMinutes);
+
+  // Inactivity auto-lock watchdog (configurable idle time auto-locks the vault)
+  useEffect(() => {
+    if (!isUnlocked || autoLockMinutes <= 0) return;
+
+    const INACTIVITY_TIMEOUT_MS = autoLockMinutes * 60 * 1000;
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        lockVault();
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
+    const events = ["mousedown", "keydown", "scroll", "touchstart"];
+    events.forEach((evt) => window.addEventListener(evt, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach((evt) => window.removeEventListener(evt, resetTimer));
+    };
+  }, [isUnlocked, autoLockMinutes, lockVault]);
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-[#0a0a0b] text-zinc-400">
@@ -61,12 +86,8 @@ export const App: React.FC = () => {
     );
   }
 
-  if (!isInitialized) {
-    return <VaultSetup />;
-  }
-
   if (!isUnlocked) {
-    return <VaultUnlock />;
+    return <VaultAuth />;
   }
 
   return (
@@ -77,7 +98,7 @@ export const App: React.FC = () => {
         onNewEnvironment={() => setIsEnvModalOpen(true)}
       />
 
-      <main className="flex-1 flex flex-col h-screen overflow-hidden bg-[#0a0a0b]">
+      <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#0a0a0b]">
         {activeView === "dashboard" && (
           <DashboardView onNewProject={() => setIsProjectModalOpen(true)} />
         )}

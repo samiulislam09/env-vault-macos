@@ -1,13 +1,27 @@
+pub mod auth;
 pub mod backup;
+pub mod biometric;
+pub mod breach;
 pub mod environments;
 pub mod io_cmds;
+pub mod merging;
 pub mod projects;
+pub mod revisions;
+pub mod sharing;
+pub mod turso;
 pub mod variables;
 pub mod vault;
 
+pub use auth::*;
 pub use backup::*;
+pub use biometric::*;
+pub use breach::*;
 pub use environments::*;
 pub use io_cmds::*;
+pub use merging::*;
 pub use projects::*;
+pub use revisions::*;
+pub use sharing::*;
+pub use turso::*;
 pub use variables::*;
 pub use vault::*;

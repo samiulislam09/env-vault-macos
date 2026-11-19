@@ -1,4 +1,3 @@
-use localvault_core::{LvError, LvResult};
 use localvault_storage::VaultPaths;
 use localvault_vault::{
     create_vault, unlock_vault, unlock_with_recovery, VaultCreated, VaultState,
@@ -45,6 +44,8 @@ pub async fn create_vault_cmd(
     // Auto-unlock upon creation
     let unlocked = unlock_vault(&paths, &password).map_err(|e| e.to_string())?;
     state.set_unlocked(unlocked).map_err(|e| e.to_string())?;
+
+    super::turso::trigger_auto_sync_background();
 
     Ok(created)
 }

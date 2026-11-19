@@ -18,9 +18,8 @@ localvault-vault = { workspace = true }
 localvault-projects = { workspace = true }
 localvault-environments = { workspace = true }
 localvault-variables = { workspace = true }
-localvault-io = { workspace = true }
-localvault-backup = { workspace = true }
 clap = { workspace = true }
+rpassword = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

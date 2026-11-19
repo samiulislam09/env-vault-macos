@@ -5,15 +5,24 @@ import type {
   ProjectRecord,
   VariableSummary,
   WorkspaceRecord,
+  UserSession,
+  UserAccountSummary,
+  VaultRole,
 } from "../lib/types";
 
 interface VaultState {
-  // Vault lifecycle
+  // Vault lifecycle & authentication
   isInitialized: boolean;
   isUnlocked: boolean;
+  currentUser: UserSession | null;
+  localAccounts: UserAccountSummary[];
   vaultPath: string;
   isLoading: boolean;
   error: string | null;
+
+  // Role-Based Access Control (RBAC)
+  activeRole: VaultRole;
+  setActiveRole: (role: VaultRole) => void;
 
   // Active navigation
   activeView: "dashboard" | "project" | "compare" | "settings";
@@ -36,6 +45,21 @@ interface VaultState {
   unlockWithRecovery: (recoveryKey: string) => Promise<void>;
   lockVault: () => Promise<void>;
 
+  // User Authentication
+  login: (email: string, password: string) => Promise<void>;
+  biometricUnlock: (email: string, userId: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<string | undefined>;
+  logout: () => Promise<void>;
+
+  // Sync & Security Preferences
+  syncStatus: "idle" | "syncing" | "synced" | "error";
+  lastSyncTime: number | null;
+  autoLockMinutes: number;
+  clipboardTimeoutSeconds: number;
+  setAutoLockMinutes: (min: number) => void;
+  setClipboardTimeoutSeconds: (sec: number) => void;
+  triggerSync: () => Promise<void>;
+
   // Selection
   selectProject: (projectId: string) => Promise<void>;
   selectProjectAndEnvironment: (projectId: string, envId: string) => Promise<void>;
@@ -44,16 +68,50 @@ interface VaultState {
   deleteProject: (projectId: string) => Promise<void>;
   selectEnvironment: (envId: string) => Promise<void>;
   refreshProjects: () => Promise<void>;
+  reorderProjects: (sourceIndex: number, targetIndex: number) => void;
   refreshEnvironments: (projectId: string) => Promise<void>;
   refreshVariables: (envId: string) => Promise<void>;
+}
+
+function applySavedProjectOrder(projects: ProjectRecord[]): ProjectRecord[] {
+  try {
+    const raw = localStorage.getItem("lv_project_order");
+    if (!raw) return projects;
+    const order: string[] = JSON.parse(raw);
+    if (!Array.isArray(order) || order.length === 0) return projects;
+
+    const map = new Map(projects.map((p) => [p.id, p]));
+    const result: ProjectRecord[] = [];
+
+    for (const id of order) {
+      const p = map.get(id);
+      if (p) {
+        result.push(p);
+        map.delete(id);
+      }
+    }
+    for (const p of map.values()) {
+      result.push(p);
+    }
+    return result;
+  } catch {
+    return projects;
+  }
 }
 
 export const useVaultStore = create<VaultState>((set, get) => ({
   isInitialized: false,
   isUnlocked: false,
+  currentUser: null,
+  localAccounts: [],
   vaultPath: "",
   isLoading: true,
   error: null,
+  activeRole: (localStorage.getItem("lv_active_role") as VaultRole) || "admin",
+  setActiveRole: (role: VaultRole) => {
+    localStorage.setItem("lv_active_role", role);
+    set({ activeRole: role });
+  },
   activeView: "dashboard",
 
   workspaces: [],
@@ -65,20 +123,50 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   projectEnvironments: {},
   variables: [],
 
+  syncStatus: "idle",
+  lastSyncTime: null,
+  autoLockMinutes: parseInt(localStorage.getItem("lv_auto_lock_minutes") || "15", 10),
+  clipboardTimeoutSeconds: parseInt(localStorage.getItem("lv_clipboard_timeout_sec") || "30", 10),
+
+  setAutoLockMinutes: (min: number) => {
+    localStorage.setItem("lv_auto_lock_minutes", min.toString());
+    set({ autoLockMinutes: min });
+  },
+
+  setClipboardTimeoutSeconds: (sec: number) => {
+    localStorage.setItem("lv_clipboard_timeout_sec", sec.toString());
+    set({ clipboardTimeoutSeconds: sec });
+  },
+
+  triggerSync: async () => {
+    try {
+      set({ syncStatus: "syncing" });
+      await api.tursoSyncPush();
+      await api.tursoSyncPull();
+      set({ syncStatus: "synced", lastSyncTime: Date.now() });
+      await get().refreshProjects();
+    } catch (e: any) {
+      console.error("Manual sync failed:", e);
+      set({ syncStatus: "error" });
+    }
+  },
+
   setActiveView: (view) => set({ activeView: view }),
 
   checkStatus: async () => {
     try {
       set({ isLoading: true, error: null });
-      const status = await api.getVaultStatus();
+      const auth = await api.getAuthStatus();
       set({
-        isInitialized: status.exists,
-        isUnlocked: status.is_unlocked,
-        vaultPath: status.vault_path,
+        isInitialized: auth.localAccounts.length > 0 || !!auth.currentUser,
+        isUnlocked: auth.isUnlocked,
+        currentUser: auth.currentUser,
+        localAccounts: auth.localAccounts,
+        vaultPath: auth.vaultPath,
         isLoading: false,
       });
 
-      if (status.is_unlocked) {
+      if (auth.isUnlocked) {
         await get().refreshProjects();
       }
     } catch (e: any) {
@@ -134,6 +222,74 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         activeEnvironmentId: null,
         variables: [],
       });
+      await get().checkStatus();
+    } catch (e: any) {
+      set({ error: e.toString() });
+    }
+  },
+
+  login: async (email: string, password: string) => {
+    try {
+      set({ isLoading: true, error: null });
+      const resp = await api.login(email, password);
+      set({
+        currentUser: { userId: resp.userId, email: resp.email },
+        isUnlocked: true,
+        isLoading: false,
+      });
+      await get().refreshProjects();
+    } catch (e: any) {
+      set({ error: e.toString(), isLoading: false });
+      throw e;
+    }
+  },
+
+  biometricUnlock: async (email: string, userId: string) => {
+    try {
+      set({ isLoading: true, error: null });
+      const resp = await api.biometricUnlock(email, userId);
+      set({
+        currentUser: { userId: resp.userId, email: resp.email },
+        isUnlocked: true,
+        isLoading: false,
+      });
+      await get().refreshProjects();
+    } catch (e: any) {
+      set({ error: e.toString(), isLoading: false });
+      throw e;
+    }
+  },
+
+  register: async (email: string, password: string) => {
+    try {
+      set({ isLoading: true, error: null });
+      const resp = await api.register(email, password);
+      set({
+        currentUser: { userId: resp.userId, email: resp.email },
+        isUnlocked: true,
+        isLoading: false,
+      });
+      await get().refreshProjects();
+      return resp.recoveryKey;
+    } catch (e: any) {
+      set({ error: e.toString(), isLoading: false });
+      throw e;
+    }
+  },
+
+  logout: async () => {
+    try {
+      await api.logout();
+      set({
+        isUnlocked: false,
+        currentUser: null,
+        projects: [],
+        activeProjectId: null,
+        environments: [],
+        activeEnvironmentId: null,
+        variables: [],
+      });
+      await get().checkStatus();
     } catch (e: any) {
       set({ error: e.toString() });
     }
@@ -141,11 +297,32 @@ export const useVaultStore = create<VaultState>((set, get) => ({
 
   refreshProjects: async () => {
     try {
-      const projects = await api.listProjects();
+      const rawProjects = await api.listProjects();
+      const projects = applySavedProjectOrder(rawProjects);
       set({ projects });
     } catch (e: any) {
       set({ error: e.toString() });
     }
+  },
+
+  reorderProjects: (sourceIndex: number, targetIndex: number) => {
+    const current = [...get().projects];
+    if (
+      sourceIndex < 0 ||
+      sourceIndex >= current.length ||
+      targetIndex < 0 ||
+      targetIndex >= current.length ||
+      sourceIndex === targetIndex
+    ) {
+      return;
+    }
+
+    const [moved] = current.splice(sourceIndex, 1);
+    current.splice(targetIndex, 0, moved);
+
+    const orderedIds = current.map((p) => p.id);
+    localStorage.setItem("lv_project_order", JSON.stringify(orderedIds));
+    set({ projects: current });
   },
 
   selectProject: async (projectId: string) => {
